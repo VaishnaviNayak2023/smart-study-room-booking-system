@@ -89,7 +89,7 @@ async function handleRegister() {
       type: 'positive',
       message: `Registration successful. Redirecting to ${res.role === 'admin' ? 'Admin' : 'User'} dashboard...`,
     });
-    void router.push(res.role === 'admin' ? '/admin-dashboard' : '/dashboard');
+    await router.replace(res.role === 'admin' ? '/admin-dashboard' : '/dashboard');
   } catch (error: unknown) {
     const message =
       typeof error === 'object' && error && 'response' in error

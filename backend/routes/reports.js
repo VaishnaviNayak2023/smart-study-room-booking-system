@@ -5,8 +5,8 @@ import { authenticate, authorize } from '../middleware/auth.js';
 const router = Router();
 
 /* GET /api/reports */
-router.get('/', authenticate, authorize('admin'), (req, res) => {
-  const allBookings = db.prepare('SELECT * FROM bookings').all();
+router.get('/', authenticate, authorize('admin'), async (req, res) => {
+  const allBookings = await db.prepare('SELECT * FROM bookings').all();
   const totalBookings = allBookings.length;
 
   const byStatus = (status) => allBookings.filter((b) => b.status === status).length;
@@ -18,7 +18,6 @@ router.get('/', authenticate, authorize('admin'), (req, res) => {
     return { label: s, count, percent, color };
   });
 
-  // Aggregate bookings per resource name
   const byResource = {};
   for (const b of allBookings) {
     byResource[b.resource] = byResource[b.resource] || { bookings: 0, resourceId: b.resource_id };
@@ -33,8 +32,7 @@ router.get('/', authenticate, authorize('admin'), (req, res) => {
       utilization: totalBookings ? Math.round((info.bookings / totalBookings) * 100) : 0,
     }));
 
-  const totalUsers = db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'user'").get().c;
-  // Total revenue ~ sum of numeric parts of amount strings
+  const totalUsersRow = await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'user'").get();
   const revenue = allBookings.reduce((acc, b) => {
     const m = String(b.amount || '').replace(/[^\d.]/g, '');
     return acc + (parseFloat(m) || 0);
@@ -44,7 +42,7 @@ router.get('/', authenticate, authorize('admin'), (req, res) => {
     { label: 'TOTAL REVENUE', value: `$${revenue.toLocaleString()}`, icon: 'payments', color: 'green', trend: 12 },
     { label: 'BOOKINGS', value: String(totalBookings), icon: 'event', color: 'blue', trend: 8 },
     { label: 'AVG OCCUPANCY', value: `${totalBookings ? Math.min(100, Math.round((totalBookings / 100) * 100)) : 0}%`, icon: 'insights', color: 'purple', trend: -3 },
-    { label: 'NEW USERS', value: String(totalUsers), icon: 'person_add', color: 'orange', trend: 18 },
+    { label: 'NEW USERS', value: String(totalUsersRow.c), icon: 'person_add', color: 'orange', trend: 18 },
   ];
 
   res.json({ stats, statusBreakdown, topResources });

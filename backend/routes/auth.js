@@ -20,7 +20,7 @@ const publicUser = (user) => ({
 });
 
 /* POST /api/auth/register */
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { email, password, name = '', role = 'user' } = req.body || {};
 
   if (!email || !password) {
@@ -28,23 +28,23 @@ router.post('/register', (req, res) => {
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
-  const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  const exists = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
   if (exists) {
     return res.status(409).json({ message: 'An account with this email already exists.' });
   }
 
   const hashed = bcrypt.hashSync(String(password), 10);
-  const info = db
+  const info = await db
     .prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)')
-    .run(normalizedEmail, hashed, name.trim(), role === 'admin' ? 'admin' : 'user');
+    .run(normalizedEmail, hashed, String(name).trim(), role === 'admin' ? 'admin' : 'user');
 
-  const user = db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(info.lastInsertRowid);
+  const user = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(info.lastInsertRowid);
 
   return res.status(201).json({ user: publicUser(user), token: signToken(user) });
 });
 
 /* POST /api/auth/login */
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password, role } = req.body || {};
 
   if (!email || !password) {
@@ -52,7 +52,7 @@ router.post('/login', (req, res) => {
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
+  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
 
   if (!user || !bcrypt.compareSync(String(password), user.password)) {
     return res.status(401).json({ message: 'Incorrect email or password.' });
@@ -66,7 +66,7 @@ router.post('/login', (req, res) => {
 });
 
 /* GET /api/auth/me — current user from token */
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -76,9 +76,7 @@ router.get('/me', (req, res) => {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = db
-      .prepare('SELECT id, email, name, role FROM users WHERE id = ?')
-      .get(payload.id);
+    const user = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(payload.id);
     if (!user) return res.status(401).json({ message: 'User not found.' });
     return res.json({ user: publicUser(user) });
   } catch (err) {
@@ -87,7 +85,7 @@ router.get('/me', (req, res) => {
 });
 
 /* PUT /api/auth/profile — update current user's name / password (authenticated) */
-router.put('/profile', (req, res) => {
+router.put('/profile', async (req, res) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -102,12 +100,11 @@ router.put('/profile', (req, res) => {
     return res.status(401).json({ message: 'Invalid or expired token.' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
   if (!user) return res.status(401).json({ message: 'User not found.' });
 
   const { name, currentPassword, newPassword } = req.body || {};
 
-  // If changing password, verify the current one.
   if (newPassword) {
     if (!currentPassword || !bcrypt.compareSync(String(currentPassword), user.password)) {
       return res.status(400).json({ message: 'Current password is incorrect.' });
@@ -115,15 +112,13 @@ router.put('/profile', (req, res) => {
   }
 
   const hashed = newPassword ? bcrypt.hashSync(String(newPassword), 10) : user.password;
-  db.prepare('UPDATE users SET name = ?, password = ? WHERE id = ?').run(
+  await db.prepare('UPDATE users SET name = ?, password = ? WHERE id = ?').run(
     name !== undefined ? String(name) : user.name,
     hashed,
     user.id,
   );
 
-  const updated = db
-    .prepare('SELECT id, email, name, role FROM users WHERE id = ?')
-    .get(user.id);
+  const updated = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(user.id);
   return res.json({ user: publicUser(updated) });
 });
 

@@ -4,47 +4,44 @@ import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = Router();
 
-const rowToType = (r) => ({
+const rowToType = async (r) => ({
   id: r.id,
   name: r.name,
   icon: r.icon,
   color: r.color,
   description: r.description,
-  resources: db.prepare('SELECT COUNT(*) AS c FROM resources WHERE type = ?').get(r.name).c,
+  resources: (await db.prepare('SELECT COUNT(*) AS c FROM resources WHERE type = ?').get(r.name)).c,
 });
 
 /* GET /api/resource-types */
-router.get('/', authenticate, (req, res) => {
-  const rows = db.prepare('SELECT * FROM resource_types ORDER BY id').all();
-  res.json({ resourceTypes: rows.map(rowToType) });
+router.get('/', authenticate, async (req, res) => {
+  const rows = await db.prepare('SELECT * FROM resource_types ORDER BY id').all();
+  res.json({ resourceTypes: await Promise.all(rows.map(rowToType)) });
 });
 
 /* POST /api/resource-types */
-router.post('/', authenticate, authorize('admin'), (req, res) => {
+router.post('/', authenticate, authorize('admin'), async (req, res) => {
   const { name, icon = 'meeting_room', color = 'purple', description = '' } = req.body || {};
   if (!name) return res.status(400).json({ message: 'Name is required.' });
-  const info = db
-    .prepare('INSERT INTO resource_types (name, icon, color, description) VALUES (?, ?, ?, ?)')
-    .run(name, icon, color, description);
-  const row = db.prepare('SELECT * FROM resource_types WHERE id = ?').get(info.lastInsertRowid);
-  res.status(201).json({ resourceType: rowToType(row) });
+  const info = await db.prepare('INSERT INTO resource_types (name, icon, color, description) VALUES (?, ?, ?, ?)').run(name, icon, color, description);
+  const row = await db.prepare('SELECT * FROM resource_types WHERE id = ?').get(info.lastInsertRowid);
+  res.status(201).json({ resourceType: await rowToType(row) });
 });
 
 /* PUT /api/resource-types/:id */
-router.put('/:id', authenticate, authorize('admin'), (req, res) => {
-  const existing = db.prepare('SELECT * FROM resource_types WHERE id = ?').get(req.params.id);
+router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
+  const existing = await db.prepare('SELECT * FROM resource_types WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ message: 'Resource type not found.' });
   const { name, icon, color, description } = req.body || {};
-  db.prepare('UPDATE resource_types SET name = ?, icon = ?, color = ?, description = ? WHERE id = ?')
-    .run(name ?? existing.name, icon ?? existing.icon, color ?? existing.color, description ?? existing.description, existing.id);
-  const row = db.prepare('SELECT * FROM resource_types WHERE id = ?').get(existing.id);
-  res.json({ resourceType: rowToType(row) });
+  await db.prepare('UPDATE resource_types SET name = ?, icon = ?, color = ?, description = ? WHERE id = ?').run(name ?? existing.name, icon ?? existing.icon, color ?? existing.color, description ?? existing.description, existing.id);
+  const row = await db.prepare('SELECT * FROM resource_types WHERE id = ?').get(existing.id);
+  res.json({ resourceType: await rowToType(row) });
 });
 
 /* DELETE /api/resource-types/:id */
-router.delete('/:id', authenticate, authorize('admin'), (req, res) => {
-  const info = db.prepare('DELETE FROM resource_types WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ message: 'Resource type not found.' });
+router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
+  const info = await db.prepare('DELETE FROM resource_types WHERE id = ?').run(req.params.id);
+  if (info.affectedRows === 0) return res.status(404).json({ message: 'Resource type not found.' });
   res.json({ message: 'Resource type deleted.' });
 });
 

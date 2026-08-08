@@ -95,19 +95,43 @@ export default defineRouter((/* { store, ssrContext } */) => {
   });
 
   // Auth + role guard
-  Router.beforeEach((to) => {
-    const studyroomStore = useStudyroomStore();
-    const isLoggedIn = !!studyroomStore.currentUser;
-    const userRole = studyroomStore.currentUser?.role;
+  let sessionValidated = false;
 
-    // Public pages (login/register) — bounce authenticated users to their dashboard
-    if (to.meta.public) {
-      if (isLoggedIn) {
+  Router.beforeEach(async (to) => {
+    const studyroomStore = useStudyroomStore();
+
+    if (!sessionValidated) {
+      sessionValidated = true;
+      await studyroomStore.validateSession();
+    }
+
+    if (to.path === '/login' || to.path === '/register') {
+      if (studyroomStore.currentUser) {
         return {
-          path: userRole === 'admin' ? '/admin-dashboard' : '/dashboard',
+          path: studyroomStore.currentUser.role === 'admin' ? '/admin-dashboard' : '/dashboard',
         };
       }
       return true;
+    }
+
+    const isLoggedIn = !!studyroomStore.currentUser;
+    const userRole = studyroomStore.currentUser?.role;
+
+    // Public pages (login/register) stay accessible so users can sign in or
+    // register even if a previous session exists. Only redirect from other public
+    // routes such as the site root to the appropriate dashboard.
+    if (to.meta.public) {
+      if (!isLoggedIn) {
+        return true;
+      }
+
+      if (to.path === '/login' || to.path === '/register') {
+        return true;
+      }
+
+      return {
+        path: userRole === 'admin' ? '/admin-dashboard' : '/dashboard',
+      };
     }
 
     // Protected pages — require login

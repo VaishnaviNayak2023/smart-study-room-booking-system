@@ -41,6 +41,28 @@ export const useStudyroomStore = defineStore('studyroom', {
       }
     },
 
+    /**
+     * Validates the stored token against the backend and refreshes the stored
+     * user. Returns true if the session is still valid, false otherwise.
+     * On failure (expired/invalid token) the session is cleared so the login
+     * page is shown instead of skipping straight to the dashboard.
+     */
+    async validateSession(): Promise<boolean> {
+      if (!this.authToken) {
+        this.logout();
+        return false;
+      }
+      try {
+        const { data } = await api.get<{ user: User }>('/auth/me');
+        this.currentUser = data.user;
+        setStoredUser(data.user);
+        return true;
+      } catch {
+        this.logout();
+        return false;
+      }
+    },
+
 async login(email: string, password: string, role: 'admin' | 'user') {
       this.loading = true;
       try {

@@ -4,7 +4,7 @@ import db from '../db.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key';
 
 /* Verify the Bearer token and attach the requesting user to req.user */
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -14,9 +14,7 @@ export function authenticate(req, res, next) {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = db
-      .prepare('SELECT id, email, name, role FROM users WHERE id = ?')
-      .get(payload.id);
+    const user = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(payload.id);
 
     if (!user) {
       return res.status(401).json({ message: 'User belonging to token no longer exists.' });

@@ -84,7 +84,7 @@ async function handleLogin() {
   try {
     const user = await studyroomStore.login(email.value, password.value, role.value);
     Notify.create({ type: 'positive', message: `Sign-in successful.` });
-    void router.push(user.role === 'admin' ? '/admin-dashboard' : '/dashboard');
+    await router.replace(user.role === 'admin' ? '/admin-dashboard' : '/dashboard');
   } catch (error: unknown) {
     const message =
       typeof error === 'object' && error && 'response' in error
