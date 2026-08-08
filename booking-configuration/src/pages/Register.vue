@@ -83,17 +83,20 @@ async function handleRegister() {
     return;
   }
 
-  const res = studyroomStore.register(email.value, password.value, role.value);
-  if (!res) {
-    Notify.create({ type: 'negative', message: 'A user with that email already exists.' });
-    return;
+  try {
+    const res = await studyroomStore.register(email.value, password.value, '', role.value);
+    Notify.create({
+      type: 'positive',
+      message: `Registration successful. Redirecting to ${res.role === 'admin' ? 'Admin' : 'User'} dashboard...`,
+    });
+    void router.push(res.role === 'admin' ? '/admin-dashboard' : '/dashboard');
+  } catch (error: unknown) {
+    const message =
+      typeof error === 'object' && error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+    Notify.create({ type: 'negative', message: message || 'Registration failed. Please try again.' });
   }
-
-  Notify.create({
-    type: 'positive',
-    message: `Registration successful. Redirecting to ${res.role === 'admin' ? 'Admin' : 'User'} dashboard...`,
-  });
-  void router.push(res.role === 'admin' ? '/admin-dashboard' : '/dashboard');
 }
 </script>
 

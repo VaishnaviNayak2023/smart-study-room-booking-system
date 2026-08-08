@@ -14,14 +14,14 @@
             <p>Find and book available study rooms.</p>
           </div>
 
-          <div class="header-user">
+<div class="header-user">
             <q-btn flat round dense icon="notifications_none" class="notification-button" />
 
             <q-avatar size="28px">
               <img src="https://i.pravatar.cc/100?img=12" alt="User" />
             </q-avatar>
 
-            <span class="username"> Ananya </span>
+            <span class="username"> {{ currentUser?.name || 'User' }} </span>
 
             <q-icon name="keyboard_arrow_down" size="14px" />
           </div>
@@ -280,7 +280,7 @@
               <!-- Peak -->
 
               <div class="price-row">
-                <span> Peak Hour Charge (15%) </span>
+                <span> Peak Hour Charge ({{ peakPercent }}%) </span>
 
                 <span> ₹{{ formatPrice(priceSummary.peakCharge) }} </span>
               </div>
@@ -288,7 +288,7 @@
               <!-- Discount -->
 
               <div class="price-row discount-row">
-                <span> Student Discount (10%) </span>
+                <span> Student Discount ({{ discountPercent }}%) </span>
 
                 <span> -₹{{ formatPrice(priceSummary.discount) }} </span>
               </div>
@@ -296,7 +296,7 @@
               <!-- GST -->
 
               <div class="price-row">
-                <span> GST (18%) </span>
+                <span> GST ({{ gstPercent }}%) </span>
 
                 <span> ₹{{ formatPrice(priceSummary.gst) }} </span>
               </div>
@@ -331,9 +331,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import { useQuasar } from 'quasar';
+import api from '@/services/api';
+import { useStudyroomStore } from '@/stores/studyroom-store';
 
 /* ==========================================================
    TYPES
@@ -353,12 +355,18 @@ interface Room {
 
 const $q = useQuasar();
 
+const studyroomStore = useStudyroomStore();
+
+const currentUser = computed(() => studyroomStore.currentUser);
+
 /* ==========================================================
    FILTERS
    ========================================================== */
 
+const today = new Date().toISOString().slice(0, 10);
+
 const filters = ref({
-  date: '2024-05-24',
+  date: today,
   time: 'Any Time',
   capacity: 'Any',
 });
@@ -371,72 +379,75 @@ const capacityOptions = ['Any', 'Up to 2 People', 'Up to 4 People', 'Up to 8 Peo
    ROOMS
    ========================================================== */
 
-const rooms = ref<Room[]>([
-  {
-    id: 1,
+const rooms = ref<Room[]>([]);
 
-    name: 'Study Room A101',
+const loading = ref(false);
 
-    capacity: 4,
+/* Room names already booked by the current user (for the selected date) */
+const bookedRoomNames = ref<Set<string>>(new Set());
 
-    available: true,
+const loadRooms = async () => {
+  loading.value = true;
+  try {
+    const [roomsRes, bookingsRes] = await Promise.all([
+      api.get<{ rooms: Room[] }>('/rooms'),
+      api.get<{ bookings: { resource: string; status: string }[] }>('/bookings/my'),
+    ]);
+    rooms.value = roomsRes.data.rooms;
 
-    image:
-      'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=800&q=80',
-  },
-
-  {
-    id: 2,
-
-    name: 'Study Room A102',
-
-    capacity: 4,
-
-    available: true,
-
-    image:
-      'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=800&q=80',
-  },
-
-  {
-    id: 3,
-
-    name: 'Study Room B201',
-
-    capacity: 8,
-
-    available: true,
-
-    image:
-      'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80',
-  },
-]);
+    const activeBookings = (bookingsRes.data.bookings || []).filter(
+      (b) => b.status === 'Confirmed' || b.status === 'Pending',
+    );
+    bookedRoomNames.value = new Set(activeBookings.map((b) => b.resource));
+  } catch (error) {
+    console.error('Failed to load rooms', error);
+    $q.notify({ type: 'negative', message: 'Failed to load rooms.' });
+  } finally {
+    loading.value = false;
+  }
+};
 
 /* ==========================================================
-   FILTERED ROOMS
+   FILTERED ROOMS (filters + exclude already-booked)
    ========================================================== */
 
 const filteredRooms = computed(() => {
-  const capacity = filters.value.capacity;
-
-  if (capacity === 'Any') {
-    return rooms.value;
-  }
-
   const capacityMap: Record<string, number> = {
     'Up to 2 People': 2,
     'Up to 4 People': 4,
     'Up to 8 People': 8,
   };
 
-  const selectedCapacity = capacityMap[capacity] ?? 0;
+  const timeFrames: Record<string, number[]> = {
+    Morning: [6, 12],
+    Afternoon: [12, 17],
+    Evening: [17, 24],
+  };
 
-  if (!selectedCapacity) {
-    return rooms.value;
-  }
+  const selectedCapacity = capacityMap[filters.value.capacity] ?? 0;
+  const hoursRange = timeFrames[filters.value.time];
 
   return rooms.value.filter((room: Room) => {
-    return room.capacity >= selectedCapacity;
+    // Already booked by this user -> hide
+    if (bookedRoomNames.value.has(room.name)) {
+      return false;
+    }
+
+    // Capacity filter
+    if (selectedCapacity && room.capacity < selectedCapacity) {
+      return false;
+    }
+
+    // Time-of-day filter
+    if (hoursRange) {
+      const [startH, endH] = hoursRange;
+      const hour = Number(booking.value.startTime.split(':')[0]);
+      if (startH !== undefined && endH !== undefined && (hour < startH || hour >= endH)) {
+        return false;
+      }
+    }
+
+    return true;
   });
 });
 
@@ -444,7 +455,7 @@ const filteredRooms = computed(() => {
    SELECTED ROOM
    ========================================================== */
 
-const selectedRoom = ref<Room | null>(rooms.value[0] ?? null);
+const selectedRoom = ref<Room | null>(null);
 
 const selectRoom = (room: Room) => {
   selectedRoom.value = room;
@@ -459,7 +470,7 @@ const clearSelectedRoom = () => {
    ========================================================== */
 
 const booking = ref({
-  date: '2024-05-24',
+  date: today,
 
   startTime: '10:00 AM',
 
@@ -560,86 +571,92 @@ const additionalHoursLabel = computed(() => {
    PRICING CONFIGURATION
    ========================================================== */
 
-const HOURLY_RATE = 50;
+/* ==========================================================
+   DYNAMIC PRICING CONFIGURATION (from backend)
+   ========================================================== */
 
-const PEAK_RATE = 0.15;
+const pricing = ref({
+  hourlyRate: 50,
+  freeFirstHour: true,
+  peakMultiplier: 1.5,
+  gstRate: 0.18,
+  studentDiscount: 0.1,
+  peakStart: '',
+  peakEnd: '',
+});
 
-const STUDENT_DISCOUNT = 0.1;
+const loadPricing = async () => {
+  try {
+    const { data } = await api.get<{ pricing: Partial<typeof pricing.value> }>(
+      '/pricing-rules/resources',
+    );
+    pricing.value = { ...pricing.value, ...data.pricing };
+  } catch (error) {
+    console.error('Failed to load pricing', error);
+  }
+};
 
-const GST_RATE = 0.18;
+onMounted(() => {
+  void loadRooms();
+  void loadPricing();
+});
 
 /* ==========================================================
-   PRICE CALCULATION
+   PRICE CALCULATION (dynamic)
    ========================================================== */
 
 const priceSummary = computed(() => {
   const totalHours = duration.value;
-
-  /*
-   * First hour is free.
-   */
-
-  const freeHours = Math.min(totalHours, 1);
-
+  const hourly = Number(pricing.value.hourlyRate) || 0;
+  const freeHours = pricing.value.freeFirstHour ? Math.min(totalHours, 1) : 0;
   const additionalHours = Math.max(totalHours - freeHours, 0);
 
-  const firstHour = freeHours > 0 ? 0 : 0;
+  const firstHour = 0;
+  const additionalHour = additionalHours * hourly;
 
-  /*
-   * Additional hourly charge.
-   */
+  const isPeak =
+    duration.value > 0 &&
+    !!pricing.value.peakStart &&
+    !!pricing.value.peakEnd &&
+    convertTimeToMinutes(booking.value.startTime) >= convertTimeToMinutes(pricing.value.peakStart) &&
+    convertTimeToMinutes(booking.value.startTime) <= convertTimeToMinutes(pricing.value.peakEnd);
 
-  const additionalHour = additionalHours * HOURLY_RATE;
-
-  /*
-   * Peak hour surcharge.
-   */
-
-  const peakCharge = additionalHour * PEAK_RATE;
-
-  /*
-   * Amount before discount.
-   */
+  const peakCharge =
+    isPeak && Number(pricing.value.peakMultiplier) > 1
+      ? additionalHour * (Number(pricing.value.peakMultiplier) - 1)
+      : 0;
 
   const beforeDiscount = additionalHour + peakCharge;
-
-  /*
-   * Student discount.
-   */
-
-  const discount = beforeDiscount * STUDENT_DISCOUNT;
-
-  /*
-   * Taxable amount.
-   */
-
+  const discount = beforeDiscount * (Number(pricing.value.studentDiscount) || 0);
   const taxableAmount = beforeDiscount - discount;
-
-  /*
-   * GST.
-   */
-
-  const gst = taxableAmount * GST_RATE;
-
-  /*
-   * Final total.
-   */
-
+  const gst = taxableAmount * (Number(pricing.value.gstRate) || 0);
   const total = taxableAmount + gst;
 
   return {
     firstHour,
-
     additionalHour,
-
     peakCharge,
-
     discount,
-
     gst,
-
     total,
   };
+});
+
+/* ==========================================================
+   DYNAMIC PERCENT LABELS (from backend pricing)
+   ========================================================== */
+
+const peakPercent = computed(() => {
+  const m = Number(pricing.value.peakMultiplier) || 1;
+  return Math.round((m - 1) * 100);
+});
+
+const discountPercent = computed(() => {
+  return Math.round((Number(pricing.value.studentDiscount) || 0) * 100);
+});
+
+const gstPercent = computed(() => {
+  return Math.round((Number(pricing.value.gstRate) || 0) * 100);
 });
 
 /* ==========================================================
@@ -647,11 +664,10 @@ const priceSummary = computed(() => {
    ========================================================== */
 
 const searchRooms = () => {
+  const count = filteredRooms.value.length;
   $q.notify({
     type: 'info',
-
-    message: 'Searching available rooms...',
-
+    message: `${count} room${count === 1 ? '' : 's'} available for the selected filters.`,
     position: 'top',
   });
 };
@@ -660,13 +676,12 @@ const searchRooms = () => {
    CONFIRM BOOKING
    ========================================================== */
 
-const confirmBooking = () => {
+const confirmBooking = async () => {
   if (!selectedRoom.value) {
     $q.notify({
       type: 'warning',
 
       message: 'Please select a room first.',
-
       position: 'top',
     });
 
@@ -685,13 +700,35 @@ const confirmBooking = () => {
     return;
   }
 
-  $q.notify({
-    type: 'positive',
+  try {
+    await api.post('/bookings', {
+      resource: selectedRoom.value.name,
+      resourceId: selectedRoom.value.id,
+      date: booking.value.date,
+      time: booking.value.startTime,
+      startTime: booking.value.startTime,
+      endTime: booking.value.endTime,
+      amount: `₹${formatPrice(priceSummary.value.total)}`,
+      status: 'Confirmed',
+    });
 
-    message: `${selectedRoom.value.name} booked successfully.`,
+    // Hide the booked room from the browse list (dynamic update)
+    bookedRoomNames.value.add(selectedRoom.value.name);
+    clearSelectedRoom();
 
-    position: 'top',
-  });
+    $q.notify({
+      type: 'positive',
+      message: `${selectedRoom.value.name} booked successfully.`,
+      position: 'top',
+    });
+  } catch (error) {
+    console.error('Booking failed', error);
+    $q.notify({
+      type: 'negative',
+      message: 'Booking failed. Please try again.',
+      position: 'top',
+    });
+  }
 };
 
 /* ==========================================================

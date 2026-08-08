@@ -91,12 +91,23 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { onMounted, reactive } from 'vue';
 import { Notify } from 'quasar';
+import api from '@/services/api';
 
-const settings = reactive({
+type SettingsData = {
+  systemName: string;
+  currency: string;
+  maxHours: number | string;
+  advanceDays: number | string;
+  sameDay: boolean;
+  autoConfirm: boolean;
+  emailNotifications: boolean;
+};
+
+const settings = reactive<SettingsData>({
   systemName: 'ResourceHub',
-  currency: 'USD ($)',
+  currency: 'INR (₹)',
   maxHours: '8',
   advanceDays: '7',
   sameDay: true,
@@ -106,9 +117,30 @@ const settings = reactive({
 
 const nameRules = [(v: string) => !!v || 'System name is required.'];
 
-function saveSettings() {
-  Notify.create({ type: 'positive', message: 'Settings saved successfully.' });
+const loadSettings = async () => {
+  try {
+    const { data } = await api.get<{ settings: Partial<SettingsData> }>('/settings');
+    if (data.settings) {
+      Object.assign(settings, data.settings);
+    }
+  } catch (error) {
+    console.error('Failed to load settings', error);
+  }
+};
+
+async function saveSettings() {
+  try {
+    await api.put('/settings', settings);
+    Notify.create({ type: 'positive', message: 'Settings saved successfully.' });
+  } catch (error) {
+    console.error('Save settings failed', error);
+    Notify.create({ type: 'negative', message: 'Failed to save settings.' });
+  }
 }
+
+onMounted(() => {
+  void loadSettings();
+});
 </script>
 
 <style scoped>

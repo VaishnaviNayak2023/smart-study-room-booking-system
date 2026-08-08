@@ -67,13 +67,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
+import { Notify } from 'quasar';
+import api from '@/services/api';
 
-const stats = ref({
-  totalResources: 18,
-  totalBookings: 45,
-  todaysBookings: 7,
-  totalUsers: 120,
+type DashboardStats = {
+  totalResources: number;
+  totalBookings: number;
+  todaysBookings: number;
+  totalUsers: number;
+};
+
+type BookingRow = {
+  id: string;
+  user: string;
+  resource: string;
+  date: string;
+  time: string;
+  status: string;
+};
+
+const loading = ref(false);
+
+const stats = ref<DashboardStats>({
+  totalResources: 0,
+  totalBookings: 0,
+  todaysBookings: 0,
+  totalUsers: 0,
 });
 
 const columns = [
@@ -85,38 +105,24 @@ const columns = [
   { name: 'status', label: 'STATUS', field: 'status' },
 ];
 
-const bookings = ref([
-  {
-    id: 'BK1001',
-    user: 'Ananya',
-    resource: 'Study Room A101',
-    date: '24 May 2024',
-    time: '10:00 AM',
-    status: 'Confirmed',
-  },
-  {
-    id: 'BK1002',
-    user: 'Rohan',
-    resource: 'Study Room A102',
-    date: '24 May 2024',
-    time: '11:00 AM',
-    status: 'Confirmed',
-  },
-  {
-    id: 'BK1003',
-    user: 'Neha',
-    resource: 'Study Room B201',
-    date: '24 May 2024',
-    time: '02:00 PM',
-    status: 'Cancelled',
-  },
-  {
-    id: 'BK1004',
-    user: 'Arjun',
-    resource: 'Study Room A101',
-    date: '24 May 2024',
-    time: '04:00 PM',
-    status: 'Confirmed',
-  },
-]);
+const bookings = ref<BookingRow[]>([]);
+
+const loadDashboard = async () => {
+  loading.value = true;
+  try {
+    const { data } = await api.get<{ stats: DashboardStats; bookings: BookingRow[] }>('/dashboard');
+    stats.value = data.stats;
+    bookings.value = data.bookings;
+  } catch (error) {
+    console.error('Failed to load dashboard', error);
+    Notify.create({ type: 'negative', message: 'Failed to load dashboard data.' });
+  } finally {
+    loading.value = false;
+  }
+};
+
+onMounted(() => {
+  void loadDashboard();
+});
+
 </script>

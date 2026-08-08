@@ -20,18 +20,18 @@
     </div>
 
     <div class="row q-gutter-md q-mb-lg">
-      <div class="col-12 col-md-8">
-        <q-card class="q-pa-lg shadow-2">
+    <div class="col-12 col-md-8">
+        <q-card v-if="upcoming" class="q-pa-lg shadow-2">
           <div class="row items-center justify-between">
             <div>
               <q-chip dense outline color="green-4" text-color="black">Upcoming</q-chip>
               <div class="text-h6 q-mt-sm">{{ upcoming.resource }}</div>
-              <div class="text-caption text-grey-7">{{ upcoming.location }}</div>
+              <div class="text-caption text-grey-7">{{ upcoming.status }}</div>
             </div>
 
             <div class="text-right">
               <div class="text-h6 text-primary">{{ upcoming.amount }}</div>
-              <div class="text-caption text-grey-7">{{ upcoming.dateLabel }}</div>
+              <div class="text-caption text-grey-7">{{ upcoming.datetime }}</div>
             </div>
           </div>
 
@@ -39,23 +39,19 @@
 
           <div class="row items-center q-pa-sm">
             <div class="col-6">
-              <div class="text-caption text-grey-6">Date</div>
-              <div class="text-body1 q-mt-sm">{{ upcoming.date }}</div>
-            </div>
-            <div class="col-6">
-              <div class="text-caption text-grey-6">Time</div>
-              <div class="text-body1 q-mt-sm">{{ upcoming.time }}</div>
+              <div class="text-caption text-grey-6">Date &amp; Time</div>
+              <div class="text-body1 q-mt-sm">{{ upcoming.datetime }}</div>
             </div>
           </div>
 
           <div class="row q-mt-md">
             <div class="col-auto">
-              <q-btn unelevated color="primary" label="Modify" @click="modifyBooking(upcoming)" />
-            </div>
-            <div class="col-auto">
               <q-btn unelevated color="negative" label="Cancel" @click="cancelBooking(upcoming)" />
             </div>
           </div>
+        </q-card>
+        <q-card v-else class="q-pa-lg shadow-2">
+          <div class="text-body1 text-grey-7">No upcoming bookings.</div>
         </q-card>
       </div>
 
@@ -132,8 +128,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { Notify } from 'quasar';
+import { computed, onMounted, ref } from 'vue';
+import { Notify, useQuasar } from 'quasar';
+import api from '@/services/api';
+
+const $q = useQuasar();
 
 type Booking = {
   id: string;
@@ -150,54 +149,28 @@ type TableColumn = {
   align?: 'left' | 'right' | 'center';
 };
 
+type RawBooking = {
+  id: string;
+  resource: string;
+  datetime: string;
+  status: string;
+  amount: string;
+  user?: string;
+  date?: string;
+  time?: string;
+};
+
 const search = ref('');
 const statusFilter = ref('All Statuses');
 
 const stats = ref({
-  totalBookings: 24,
-  hoursLogged: 48.5,
+  totalBookings: 0,
+  hoursLogged: 0,
 });
 
-const upcoming = ref({
-  id: 'BK1001',
-  resource: 'Study Room A101',
-  location: 'Main Library, 1st Floor',
-  date: '24 May 2024',
-  time: '10:00 AM - 12:00 PM',
-  dateLabel: 'Tomorrow',
-  amount: '$15.00',
-});
+const upcoming = ref<Booking | null>(null);
 
-const bookings = ref<Booking[]>([
-  {
-    id: 'BK1001',
-    resource: 'Study Room B205',
-    datetime: '28 May 2024 — 02:00 PM - 04:00 PM',
-    status: 'Confirmed',
-    amount: '$20.00',
-  },
-  {
-    id: 'BK1002',
-    resource: 'Lab 4C (Equipment)',
-    datetime: '02 Jun 2024 — 09:00 AM - 12:00 PM',
-    status: 'Pending',
-    amount: '$0.00',
-  },
-  {
-    id: 'BK1003',
-    resource: 'Study Room A101',
-    datetime: '15 May 2024 — 10:00 AM - 12:00 PM',
-    status: 'Completed',
-    amount: '$15.00',
-  },
-  {
-    id: 'BK1004',
-    resource: 'Conference Room 1',
-    datetime: '10 May 2024 — 01:00 PM - 02:00 PM',
-    status: 'Cancelled',
-    amount: '$25.00',
-  },
-]);
+const bookings = ref<Booking[]>([]);
 
 const columns: TableColumn[] = [
   { name: 'resource', label: 'RESOURCE', field: (r: Booking) => r.resource, align: 'left' },
@@ -221,6 +194,42 @@ const filteredBookings = computed(() => {
   });
 });
 
+const loadMyBookings = async () => {
+  try {
+    const { data } = await api.get<{ bookings: RawBooking[] }>('/bookings/my');
+    bookings.value = data.bookings.map((b) => ({
+      id: b.id,
+      resource: b.resource,
+      datetime: b.datetime,
+      status: b.status,
+      amount: b.amount,
+    }));
+    stats.value.totalBookings = bookings.value.length;
+    const hours = data.bookings.reduce((acc, b) => {
+      const m = String(b.datetime || '').match(/(\d+)\s*Hours?/i);
+      return acc + (m ? Number(m[1]) : 0);
+    }, 0);
+    stats.value.hoursLogged = hours;
+    const next =
+      data.bookings.find((b) => b.status === 'Confirmed' || b.status === 'Pending') || null;
+    upcoming.value = next
+      ? {
+          id: next.id,
+          resource: next.resource,
+          datetime: next.datetime,
+          status: next.status,
+          amount: next.amount,
+        }
+      : null;
+  } catch (error) {
+    console.error('Failed to load my bookings', error);
+  }
+};
+
+onMounted(() => {
+  void loadMyBookings();
+});
+
 function statusColor(status: string) {
   switch (status) {
     case 'Confirmed':
@@ -240,11 +249,26 @@ function viewBooking(row: Booking) {
   Notify.create({ type: 'info', message: `Viewing ${row.resource}` });
 }
 
-function cancelBooking(row: { resource: string }) {
-  Notify.create({ type: 'negative', message: `Cancelling ${row.resource}` });
+function cancelBooking(row: { id: string; resource: string }) {
+  $q.dialog({
+    title: 'Cancel Booking',
+    message: `Do you want to cancel "${row.resource}"?`,
+    cancel: { label: 'No', flat: true, color: 'grey-6' },
+    ok: { label: 'Yes', color: 'negative' },
+    persistent: true,
+  }).onOk(() => {
+    void doCancel(row);
+  });
 }
 
-function modifyBooking(row: { id: string }) {
-  Notify.create({ type: 'warning', message: `Modify booking ${row.id}` });
+async function doCancel(row: { id: string; resource: string }) {
+  try {
+    await api.delete(`/bookings/${row.id}`);
+    Notify.create({ type: 'positive', message: `${row.resource} cancelled.` });
+    await loadMyBookings();
+  } catch (error) {
+    console.error('Cancel failed', error);
+    Notify.create({ type: 'negative', message: 'Failed to cancel booking.' });
+  }
 }
 </script>

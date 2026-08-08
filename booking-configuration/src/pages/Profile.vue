@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Notify } from 'quasar';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
@@ -110,9 +110,10 @@ const initials = computed(() => {
 const displayName = computed(() => form.name || currentUser.value?.email?.split('@')[0] || 'User');
 
 const form = reactive({
-  name: '',
+  name: currentUser.value?.name || '',
   email: currentUser.value?.email || '',
   phone: '',
+  currentPassword: '',
   newPassword: '',
 });
 
@@ -125,9 +126,26 @@ const passwordRules = [
   (v: string) => !v || v.length >= 8 || 'Password must be at least 8 characters long if provided.',
 ];
 
-function saveProfile() {
-  Notify.create({ type: 'positive', message: 'Profile updated successfully.' });
-  form.newPassword = '';
+onMounted(() => {
+  form.name = currentUser.value?.name || '';
+  form.email = currentUser.value?.email || '';
+});
+
+async function saveProfile() {
+  try {
+    await studyroomStore.updateProfile({
+      name: form.name,
+      ...(form.newPassword
+        ? { currentPassword: form.currentPassword, newPassword: form.newPassword }
+        : {}),
+    });
+    Notify.create({ type: 'positive', message: 'Profile updated successfully.' });
+    form.currentPassword = '';
+    form.newPassword = '';
+  } catch (error) {
+    console.error('Profile update failed', error);
+    Notify.create({ type: 'negative', message: 'Failed to update profile.' });
+  }
 }
 </script>
 

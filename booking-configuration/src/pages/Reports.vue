@@ -95,29 +95,53 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Notify } from 'quasar';
+import api from '@/services/api';
 
-const stats = ref([
-  { label: 'TOTAL REVENUE', value: '$4,250', icon: 'payments', color: 'green', trend: 12 },
-  { label: 'BOOKINGS', value: '156', icon: 'event', color: 'blue', trend: 8 },
-  { label: 'AVG OCCUPANCY', value: '78%', icon: 'insights', color: 'purple', trend: -3 },
-  { label: 'NEW USERS', value: '45', icon: 'person_add', color: 'orange', trend: 18 },
-]);
+type Stat = {
+  label: string;
+  value: string;
+  icon: string;
+  color: string;
+  trend: number;
+};
 
-const statusBreakdown = ref([
-  { label: 'Confirmed', count: 98, percent: 63, color: '#4caf50' },
-  { label: 'Pending', count: 24, percent: 15, color: '#ff9800' },
-  { label: 'Completed', count: 22, percent: 14, color: '#9e9e9e' },
-  { label: 'Cancelled', count: 12, percent: 8, color: '#f44336' },
-]);
+type StatusItem = {
+  label: string;
+  count: number;
+  percent: number;
+  color?: string;
+};
 
-const topResources = ref([
-  { name: 'Study Room A101', bookings: 42, utilization: 85 },
-  { name: 'Conference Room 1', bookings: 31, utilization: 72 },
-  { name: 'Lab 4C', bookings: 27, utilization: 64 },
-  { name: 'Study Room B201', bookings: 19, utilization: 48 },
-]);
+type ResourceItem = {
+  name: string;
+  bookings: number;
+  utilization: number;
+};
+
+const stats = ref<Stat[]>([]);
+const statusBreakdown = ref<StatusItem[]>([]);
+const topResources = ref<ResourceItem[]>([]);
+
+const loadReports = async () => {
+  try {
+    const { data } = await api.get<{
+      stats: Stat[];
+      statusBreakdown: StatusItem[];
+      topResources: ResourceItem[];
+    }>('/reports');
+    stats.value = data.stats;
+    statusBreakdown.value = data.statusBreakdown;
+    topResources.value = data.topResources;
+  } catch (error) {
+    console.error('Failed to load reports', error);
+  }
+};
+
+onMounted(() => {
+  void loadReports();
+});
 
 function exportReport() {
   Notify.create({ type: 'positive', message: 'Report exported successfully.' });

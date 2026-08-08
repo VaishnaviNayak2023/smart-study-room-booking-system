@@ -653,15 +653,57 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { useQuasar } from 'quasar';
+
+import api from '@/services/api';
 
 /* ==========================================================
    QUASAR
 ========================================================== */
 
 const $q = useQuasar();
+
+/* ==========================================================
+   LOAD / SAVE PRICING RULES FROM BACKEND
+========================================================== */
+
+type PricingPayload = {
+  hourlyRate: number;
+  freeFirstHour: boolean;
+  peakStart: string;
+  peakEnd: string;
+  peakDays: string;
+  peakMultiplier: number;
+  gstRate: number;
+  studentDiscount: number;
+};
+
+const loadPricing = async () => {
+  try {
+    const { data } = await api.get<{ pricing: Record<string, Partial<PricingPayload>> }>(
+      '/pricing-rules/study',
+    );
+    const study = data.pricing?.study || {};
+    if (study.hourlyRate !== undefined) studyHourlyRate.value = String(study.hourlyRate);
+    if (study.freeFirstHour !== undefined) freeFirstHour.value = study.freeFirstHour;
+    if (study.peakStart) peakStart.value = study.peakStart;
+    if (study.peakEnd) peakEnd.value = study.peakEnd;
+    if (study.peakDays) peakDays.value = study.peakDays;
+    if (study.peakMultiplier !== undefined) peakMultiplier.value = String(study.peakMultiplier);
+    // Map backend tax/discount fields into general section
+    if (study.gstRate !== undefined) taxRate.value = String(Number(study.gstRate) * 100);
+    if (study.studentDiscount !== undefined)
+      roleDiscounts.value[0]!.discount = String(Number(study.studentDiscount) * 100);
+  } catch (error) {
+    console.error('Failed to load pricing rules', error);
+  }
+};
+
+onMounted(() => {
+  void loadPricing();
+});
 
 /* ==========================================================
    PRICING CONTEXT
@@ -925,11 +967,29 @@ const discardChanges = () => {
   });
 };
 
-const saveConfiguration = () => {
-  $q.notify({
-    type: 'positive',
-    message: 'Pricing configuration saved successfully',
-  });
+const saveConfiguration = async () => {
+  try {
+    await api.put('/pricing-rules/study', {
+      hourlyRate: Number(studyHourlyRate.value) || 0,
+      freeFirstHour: freeFirstHour.value,
+      peakStart: peakStart.value,
+      peakEnd: peakEnd.value,
+      peakDays: peakDays.value,
+      peakMultiplier: Number(peakMultiplier.value) || 1,
+      gstRate: (Number(taxRate.value) && !isNaN(Number(taxRate.value))) && taxRate.value ? Number(taxRate.value) / 100 : 0.18,
+      studentDiscount: (Number(roleDiscounts.value[0]?.discount)) / 100 || 0.1,
+    });
+    $q.notify({
+      type: 'positive',
+      message: 'Pricing configuration saved successfully',
+    });
+  } catch (error) {
+    console.error('Save pricing failed', error);
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to save pricing configuration',
+    });
+  }
 };
 
 /* ==========================================================

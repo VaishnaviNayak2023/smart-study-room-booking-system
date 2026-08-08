@@ -105,8 +105,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Notify } from 'quasar';
+import api from '@/services/api';
 
 type Booking = {
   id: string;
@@ -125,65 +126,17 @@ type TableColumn = {
   align?: 'left' | 'right' | 'center';
 };
 
+type BookingStats = {
+  total: number;
+  confirmed: number;
+  pending: number;
+  cancelled: number;
+};
+
 const search = ref('');
 const statusFilter = ref('All Statuses');
 
-const bookings = ref<Booking[]>([
-  {
-    id: 'BK1001',
-    user: 'Ananya',
-    resource: 'Study Room A101',
-    date: '24 May 2024',
-    time: '10:00 AM',
-    status: 'Confirmed',
-    amount: '$15.00',
-  },
-  {
-    id: 'BK1002',
-    user: 'Rohan',
-    resource: 'Study Room A102',
-    date: '24 May 2024',
-    time: '11:00 AM',
-    status: 'Confirmed',
-    amount: '$15.00',
-  },
-  {
-    id: 'BK1003',
-    user: 'Neha',
-    resource: 'Study Room B201',
-    date: '25 May 2024',
-    time: '02:00 PM',
-    status: 'Pending',
-    amount: '$20.00',
-  },
-  {
-    id: 'BK1004',
-    user: 'Arjun',
-    resource: 'Lab 4C (Equipment)',
-    date: '25 May 2024',
-    time: '04:00 PM',
-    status: 'Cancelled',
-    amount: '$25.00',
-  },
-  {
-    id: 'BK1005',
-    user: 'Priya',
-    resource: 'Conference Room 1',
-    date: '20 May 2024',
-    time: '09:00 AM',
-    status: 'Completed',
-    amount: '$30.00',
-  },
-  {
-    id: 'BK1006',
-    user: 'Vikram',
-    resource: 'Study Room A103',
-    date: '26 May 2024',
-    time: '01:00 PM',
-    status: 'Confirmed',
-    amount: '$15.00',
-  },
-]);
+const bookings = ref<Booking[]>([]);
 
 const columns: TableColumn[] = [
   { name: 'id', label: 'BOOKING ID', field: 'id', align: 'left' },
@@ -210,12 +163,36 @@ function filteredBookings() {
   });
 }
 
-const stats = {
-  total: bookings.value.length,
-  confirmed: bookings.value.filter((b) => b.status === 'Confirmed').length,
-  pending: bookings.value.filter((b) => b.status === 'Pending').length,
-  cancelled: bookings.value.filter((b) => b.status === 'Cancelled').length,
+const stats = ref<BookingStats>({
+  total: 0,
+  confirmed: 0,
+  pending: 0,
+  cancelled: 0,
+});
+
+const loadBookings = async () => {
+  try {
+    const { data } = await api.get<{ bookings: Booking[]; stats?: BookingStats }>('/bookings');
+    bookings.value = data.bookings;
+    if (data.stats) {
+      stats.value = data.stats;
+    } else {
+      stats.value = {
+        total: data.bookings.length,
+        confirmed: data.bookings.filter((b) => b.status === 'Confirmed').length,
+        pending: data.bookings.filter((b) => b.status === 'Pending').length,
+        cancelled: data.bookings.filter((b) => b.status === 'Cancelled').length,
+      };
+    }
+  } catch (error) {
+    console.error('Failed to load bookings', error);
+  }
 };
+
+onMounted(() => {
+  void loadBookings();
+});
+
 
 function statusColor(status: string) {
   switch (status) {

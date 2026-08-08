@@ -75,8 +75,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Notify } from 'quasar';
+import api from '@/services/api';
 
 type Resource = {
   id: number;
@@ -97,49 +98,7 @@ type TableColumn = {
 const search = ref('');
 const typeFilter = ref('All Types');
 
-const resources = ref<Resource[]>([
-  {
-    id: 1,
-    name: 'Study Room A101',
-    type: 'Study Room',
-    capacity: 4,
-    location: 'Floor 1',
-    available: true,
-  },
-  {
-    id: 2,
-    name: 'Study Room A102',
-    type: 'Study Room',
-    capacity: 4,
-    location: 'Floor 1',
-    available: true,
-  },
-  {
-    id: 3,
-    name: 'Study Room B201',
-    type: 'Study Room',
-    capacity: 8,
-    location: 'Floor 2',
-    available: false,
-  },
-  {
-    id: 4,
-    name: 'Conference Room 1',
-    type: 'Conference Room',
-    capacity: 12,
-    location: 'Floor 3',
-    available: true,
-  },
-  { id: 5, name: 'Lab 4C', type: 'Lab', capacity: 20, location: 'Floor 4', available: true },
-  {
-    id: 6,
-    name: 'Projector Kit A',
-    type: 'Equipment',
-    capacity: 1,
-    location: 'Reception',
-    available: false,
-  },
-]);
+const resources = ref<Resource[]>([]);
 
 const columns: TableColumn[] = [
   { name: 'id', label: 'ID', field: (row: Resource) => String(row.id), align: 'left' },
@@ -169,17 +128,67 @@ function filteredResources() {
   });
 }
 
+const loadResources = async () => {
+  try {
+    const { data } = await api.get<{ resources: Resource[] }>('/resources');
+    resources.value = data.resources;
+  } catch (error) {
+    console.error('Failed to load resources', error);
+  }
+};
+
 function addResource() {
-  Notify.create({ type: 'info', message: 'Add a new resource.' });
+  const name = window.prompt('Resource name');
+  if (!name) return;
+  const type = window.prompt('Type', 'Study Room') || 'Study Room';
+  const capacity = Number(window.prompt('Capacity', '4')) || 1;
+  const location = window.prompt('Location', '') || '';
+  void api
+    .post('/resources', { name, type, capacity, location, available: true, image: '' })
+    .then(() => {
+      Notify.create({ type: 'positive', message: 'Resource added.' });
+      void loadResources();
+    })
+    .catch((error) => {
+      console.error('Add failed', error);
+      Notify.create({ type: 'negative', message: 'Failed to add resource.' });
+    });
 }
 
 function editResource(res: Resource) {
-  Notify.create({ type: 'info', message: `Editing ${res.name}` });
+  const name = window.prompt('Resource name', res.name);
+  if (!name) return;
+  const capacity = Number(window.prompt('Capacity', String(res.capacity))) || res.capacity;
+  const available = window.confirm(`Is "${name}" available?`);
+  void api
+    .put(`/resources/${res.id}`, { name, capacity, available })
+    .then(() => {
+      Notify.create({ type: 'positive', message: `Updated ${name}.` });
+      void loadResources();
+    })
+    .catch((error) => {
+      console.error('Update failed', error);
+      Notify.create({ type: 'negative', message: 'Failed to update resource.' });
+    });
 }
 
 function deleteResource(res: Resource) {
-  Notify.create({ type: 'negative', message: `Delete ${res.name}` });
+  void api
+    .delete(`/resources/${res.id}`)
+    .then(() => {
+      Notify.create({ type: 'negative', message: `Deleted ${res.name}` });
+      void loadResources();
+    })
+    .catch((error) => {
+      console.error('Delete failed', error);
+      Notify.create({ type: 'negative', message: 'Failed to delete resource.' });
+    });
 }
+
+onMounted(() => {
+  void loadResources();
+});
+
 </script>
 
 <style scoped>

@@ -22,6 +22,8 @@ const drawerOpen = ref(true);
 const route = useRoute();
 const studyroomStore = useStudyroomStore();
 
+studyroomStore.init();
+
 const authPaths = ['/login', '/register'];
 
 const isAuthPage = computed(() => authPaths.includes(route.path));

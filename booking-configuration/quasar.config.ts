@@ -95,6 +95,14 @@ export default defineConfig((ctx) => {
       // vueDevtools: true,
       // https: true,
       open: true, // opens browser window automatically
+
+      proxy: {
+        '/api': {
+          target: process.env.API_TARGET || 'http://localhost:5000',
+          changeOrigin: true,
+          // ws: true,
+        },
+      },
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework

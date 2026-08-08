@@ -1,61 +1,94 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
+import api, {
+  clearToken,
+  getStoredUser,
+  getToken,
+  setStoredUser,
+  setToken,
+} from '@/services/api';
 
-interface User {
+export interface User {
+  id: number;
   email: string;
-  password: string;
+  name: string;
   role: 'admin' | 'user';
+}
+
+interface LoginResult {
+  user: User;
+  token: string;
 }
 
 export const useStudyroomStore = defineStore('studyroom', {
   state: () => ({
-    users: [
-      {
-        email: 'admin@example.com',
-        password: 'Admin@123',
-        role: 'admin' as const,
-      },
-      {
-        email: 'user@example.com',
-        password: 'User@123',
-        role: 'user' as const,
-      },
-    ] as User[],
-    currentUser: null as User | null,
+    currentUser: (getStoredUser() as User | null) ?? null,
+    authToken: getToken() ?? null,
+    loading: false,
   }),
 
   actions: {
-    login(email: string, password: string, role: 'admin' | 'user') {
-      const normalizedEmail = email.trim().toLowerCase();
-      const user = this.users.find(
-        (item) =>
-          item.email.toLowerCase() === normalizedEmail &&
-          item.password === password &&
-          item.role === role,
-      );
-
-      if (!user) {
-        return null;
+    /** Initializes auth state from persisted localStorage on app boot. */
+    init() {
+      const stored = getStoredUser() as User | null;
+      const token = getToken();
+      if (!stored || !token) {
+        clearToken();
+        this.currentUser = null;
+        this.authToken = null;
+      } else {
+        this.currentUser = stored;
+        this.authToken = token;
       }
-
-      this.currentUser = user;
-      return { role: user.role };
     },
 
-    register(email: string, password: string, role: 'admin' | 'user' = 'user') {
-      const normalizedEmail = email.trim().toLowerCase();
-      const exists = this.users.some((u) => u.email.toLowerCase() === normalizedEmail);
-      if (exists) {
-        return null;
+async login(email: string, password: string, role: 'admin' | 'user') {
+      this.loading = true;
+      try {
+        const { data } = await api.post<LoginResult>('/auth/login', { email, password, role });
+        this.currentUser = data.user;
+        this.authToken = data.token;
+        setToken(data.token);
+        setStoredUser(data.user);
+        return data.user;
+      } finally {
+        this.loading = false;
       }
+    },
 
-      const user: User = { email: normalizedEmail, password, role };
-      this.users.push(user);
-      this.currentUser = user;
-      return { role };
+    async register(email: string, password: string, name = '', role: 'admin' | 'user' = 'user') {
+      this.loading = true;
+      try {
+        const { data } = await api.post<LoginResult>('/auth/register', {
+          email,
+          password,
+          name,
+          role,
+        });
+        this.currentUser = data.user;
+        this.authToken = data.token;
+        setToken(data.token);
+        setStoredUser(data.user);
+        return data.user;
+      } finally {
+        this.loading = false;
+      }
     },
 
     logout() {
+      clearToken();
       this.currentUser = null;
+      this.authToken = null;
+    },
+
+    async updateProfile(payload: {
+      name?: string;
+      currentPassword?: string;
+      newPassword?: string;
+    }): Promise<User> {
+      const { data } = await api.put<{ user: User }>('/auth/profile', payload);
+      this.currentUser = data.user;
+      setStoredUser(data.user);
+      return data.user;
     },
   },
 });
@@ -63,3 +96,4 @@ export const useStudyroomStore = defineStore('studyroom', {
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useStudyroomStore, import.meta.hot));
 }
+

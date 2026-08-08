@@ -86,5 +86,46 @@ router.get('/me', (req, res) => {
   }
 });
 
+/* PUT /api/auth/profile — update current user's name / password (authenticated) */
+router.put('/profile', (req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication token missing.' });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid or expired token.' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
+  if (!user) return res.status(401).json({ message: 'User not found.' });
+
+  const { name, currentPassword, newPassword } = req.body || {};
+
+  // If changing password, verify the current one.
+  if (newPassword) {
+    if (!currentPassword || !bcrypt.compareSync(String(currentPassword), user.password)) {
+      return res.status(400).json({ message: 'Current password is incorrect.' });
+    }
+  }
+
+  const hashed = newPassword ? bcrypt.hashSync(String(newPassword), 10) : user.password;
+  db.prepare('UPDATE users SET name = ?, password = ? WHERE id = ?').run(
+    name !== undefined ? String(name) : user.name,
+    hashed,
+    user.id,
+  );
+
+  const updated = db
+    .prepare('SELECT id, email, name, role FROM users WHERE id = ?')
+    .get(user.id);
+  return res.json({ user: publicUser(updated) });
+});
+
 export default router;
 

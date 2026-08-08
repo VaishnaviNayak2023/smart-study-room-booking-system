@@ -51,7 +51,7 @@
       <div class="col-12 col-md-8">
         <div class="section-title">Next Upcoming Booking</div>
 
-        <q-card flat bordered class="booking-card q-mt-sm">
+        <q-card v-if="upcoming" flat bordered class="booking-card q-mt-sm">
           <div class="booking-banner"></div>
 
           <q-card-section class="booking-section">
@@ -59,7 +59,7 @@
               <div>
                 <q-badge class="confirmed-badge">
                   <q-icon name="fiber_manual_record" size="7px" class="q-mr-xs" />
-                  CONFIRMED
+                  {{ upcoming.status.toUpperCase() }}
                 </q-badge>
 
                 <div class="booking-resource">
@@ -67,41 +67,28 @@
                 </div>
 
                 <div class="booking-location">
-                  <q-icon name="location_on" size="13px" />
-                  {{ upcoming.location }}
+                  <q-icon name="schedule" size="13px" />
+                  {{ upcoming.datetime }}
                 </div>
               </div>
 
               <div class="booking-date">
-                <div>{{ upcoming.dateLabel }}</div>
-                <span>Tomorrow</span>
+                <div>{{ upcoming.datetime }}</div>
+                <span>{{ upcoming.amount }}</span>
               </div>
             </div>
 
-            <!-- Time / Capacity -->
+            <!-- Booked slot -->
             <div class="booking-info q-mt-lg">
               <div class="booking-info-item">
                 <div class="info-icon">
-                  <q-icon name="schedule" size="17px" />
+                  <q-icon name="calendar_month" size="17px" />
                 </div>
 
                 <div>
-                  <div class="info-label">Time</div>
+                  <div class="info-label">Selected Slot</div>
                   <div class="info-value">
-                    {{ upcoming.time }}
-                  </div>
-                </div>
-              </div>
-
-              <div class="booking-info-item">
-                <div class="info-icon">
-                  <q-icon name="group" size="17px" />
-                </div>
-
-                <div>
-                  <div class="info-label">Capacity</div>
-                  <div class="info-value">
-                    {{ upcoming.capacity }}
+                    {{ upcoming.datetime }}
                   </div>
                 </div>
               </div>
@@ -113,20 +100,17 @@
                 outline
                 no-caps
                 color="primary"
-                label="Cancel Booking"
+                label="My Bookings"
                 class="cancel-btn"
-                @click="cancelBooking(upcoming)"
-              />
-
-              <q-btn
-                unelevated
-                no-caps
-                color="primary"
-                label="View Details"
-                class="details-btn"
-                @click="viewBooking(upcoming)"
+                @click="browseRooms"
               />
             </div>
+          </q-card-section>
+        </q-card>
+        <q-card v-else flat bordered class="booking-card q-mt-sm">
+          <q-card-section class="booking-section">
+            <div class="booking-resource">No upcoming bookings</div>
+            <div class="booking-location">Browse rooms to reserve your next study space.</div>
           </q-card-section>
         </q-card>
       </div>
@@ -183,49 +167,85 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { useQuasar } from 'quasar';
+import api from '@/services/api';
 
 const router = useRouter();
-const $q = useQuasar();
 
 const search = ref('');
 
-const stats = ref([
-  {
-    label: 'UPCOMING BOOKINGS',
-    value: 2,
-    icon: 'calendar_month',
-    color: 'purple',
-  },
-  {
-    label: 'COMPLETED BOOKINGS',
-    value: 6,
-    icon: 'check_circle_outline',
-    color: 'green',
-  },
-  {
-    label: 'HOURS BOOKED',
-    value: 12,
-    icon: 'schedule',
-    color: 'grey',
-  },
-  {
-    label: 'TOTAL SPENT',
-    value: '₹1,250',
-    icon: 'payments',
-    color: 'blue',
-  },
+type Stat = {
+  label: string;
+  value: number | string;
+  icon: string;
+  color: string;
+};
+
+type MyBooking = {
+  id: string;
+  resource: string;
+  datetime: string;
+  status: string;
+  amount: string;
+};
+
+const stats = ref<Stat[]>([
+  { label: 'UPCOMING BOOKINGS', value: 0, icon: 'calendar_month', color: 'purple' },
+  { label: 'COMPLETED BOOKINGS', value: 0, icon: 'check_circle_outline', color: 'green' },
+  { label: 'HOURS BOOKED', value: 0, icon: 'schedule', color: 'grey' },
+  { label: 'TOTAL SPENT', value: '₹0', icon: 'payments', color: 'blue' },
 ]);
 
-const upcoming = ref({
-  resource: 'Study Room A101',
-  location: 'Main Library, 1st Floor',
-  dateLabel: '24 May 2024',
-  date: '24 May 2024',
-  time: '10:00 AM - 12:00 PM',
-  capacity: 'Up to 4 People',
+const allBookings = ref<MyBooking[]>([]);
+
+const upcoming = ref<MyBooking | null>(null);
+
+const filteredBookings = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return allBookings.value;
+  return allBookings.value.filter((b) =>
+    [b.resource, b.datetime, b.status, b.amount].join(' ').toLowerCase().includes(q),
+  );
+});
+
+const updateStats = () => {
+  const bookings = filteredBookings.value;
+  const upcomingCount = bookings.filter(
+    (b) => b.status === 'Confirmed' || b.status === 'Pending',
+  ).length;
+  const completedCount = bookings.filter((b) => b.status === 'Completed').length;
+  const hours = bookings.reduce((acc, b) => {
+    const m = String(b.datetime || '').match(/(\d+)\s*Hours?/i);
+    return acc + (m ? Number(m[1]) : 0);
+  }, 0);
+  const spent = bookings.reduce((acc, b) => {
+    const n = parseFloat(String(b.amount || '').replace(/[^\d.]/g, ''));
+    return acc + (isNaN(n) ? 0 : n);
+  }, 0);
+
+  const s = stats.value;
+  s[0]!.value = upcomingCount;
+  s[1]!.value = completedCount;
+  s[2]!.value = hours;
+  s[3]!.value = `₹${spent}`;
+
+  upcoming.value =
+    bookings.find((b) => b.status === 'Confirmed' || b.status === 'Pending') || null;
+};
+
+const loadUserDashboard = async () => {
+  try {
+    const { data } = await api.get<{ bookings: MyBooking[] }>('/bookings/my');
+    allBookings.value = data.bookings || [];
+    updateStats();
+  } catch (error) {
+    console.error('Failed to load user dashboard', error);
+  }
+};
+
+onMounted(() => {
+  void loadUserDashboard();
 });
 
 function browseRooms() {
@@ -233,25 +253,7 @@ function browseRooms() {
 }
 
 function openBookings() {
-  void router.push('/bookings');
-}
-
-function viewBooking(booking: { resource: string }) {
-  console.log('View booking:', booking);
-
-  // Example:
-  // router.push(`/bookings/${booking.id}`)
-}
-
-function cancelBooking(booking: { resource: string }) {
-  $q.dialog({
-    title: 'Cancel Booking',
-    message: `Are you sure you want to cancel ${booking.resource}?`,
-    cancel: true,
-    persistent: true,
-  }).onOk(() => {
-    console.log('Booking cancelled:', booking);
-  });
+  void router.push('/my-bookings');
 }
 </script>
 

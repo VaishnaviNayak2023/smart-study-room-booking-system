@@ -50,8 +50,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Notify } from 'quasar';
+import api from '@/services/api';
 
 type ResourceType = {
   id: number;
@@ -62,68 +63,66 @@ type ResourceType = {
   description: string;
 };
 
-const resourceTypes = ref<ResourceType[]>([
-  {
-    id: 1,
-    name: 'Study Rooms',
-    icon: 'meeting_room',
-    color: 'purple',
-    resources: 12,
-    description: 'Quiet study spaces for individual and group work.',
-  },
-  {
-    id: 2,
-    name: 'Conference Rooms',
-    icon: 'groups',
-    color: 'blue',
-    resources: 4,
-    description: 'Meeting rooms equipped for presentations and calls.',
-  },
-  {
-    id: 3,
-    name: 'Labs',
-    icon: 'science',
-    color: 'green',
-    resources: 6,
-    description: 'Equipped laboratories for academic and research use.',
-  },
-  {
-    id: 4,
-    name: 'Equipment',
-    icon: 'developer_board',
-    color: 'orange',
-    resources: 8,
-    description: 'Specialized equipment available for booking.',
-  },
-  {
-    id: 5,
-    name: 'Auditoriums',
-    icon: 'theaters',
-    color: 'red',
-    resources: 2,
-    description: 'Large venues for events, seminars, and workshops.',
-  },
-  {
-    id: 6,
-    name: 'Outdoor Spaces',
-    icon: 'park',
-    color: 'teal',
-    resources: 5,
-    description: 'Open-air areas for gatherings and activities.',
-  },
-]);
+const resourceTypes = ref<ResourceType[]>([]);
+
+const loadTypes = async () => {
+  try {
+    const { data } = await api.get<{ resourceTypes: ResourceType[] }>('/resource-types');
+    resourceTypes.value = data.resourceTypes;
+  } catch (error) {
+    console.error('Failed to load resource types', error);
+  }
+};
 
 function addType() {
-  Notify.create({ type: 'info', message: 'Add a new resource type.' });
+  const name = window.prompt('Type name');
+  if (!name) return;
+  const description = window.prompt('Description', '') || '';
+  void api
+    .post('/resource-types', { name, description })
+    .then(() => {
+      Notify.create({ type: 'positive', message: 'Type added.' });
+      void loadTypes();
+    })
+    .catch((error) => {
+      console.error('Add failed', error);
+      Notify.create({ type: 'negative', message: 'Failed to add type.' });
+    });
 }
 
 function editType(type: ResourceType) {
-  Notify.create({ type: 'info', message: `Editing ${type.name}` });
+  const name = window.prompt('Type name', type.name);
+  if (!name) return;
+  const description = window.prompt('Description', type.description) || '';
+  void api
+    .put(`/resource-types/${type.id}`, { name, description })
+    .then(() => {
+      Notify.create({ type: 'positive', message: `Updated ${name}.` });
+      void loadTypes();
+    })
+    .catch((error) => {
+      console.error('Update failed', error);
+      Notify.create({ type: 'negative', message: 'Failed to update type.' });
+    });
 }
 
 function deleteType(type: ResourceType) {
-  Notify.create({ type: 'negative', message: `Delete ${type.name}` });
+  void api
+    .delete(`/resource-types/${type.id}`)
+    .then(() => {
+      Notify.create({ type: 'negative', message: `Deleted ${type.name}` });
+      void loadTypes();
+    })
+    .catch((error) => {
+      console.error('Delete failed', error);
+      Notify.create({ type: 'negative', message: 'Failed to delete type.' });
+    });
 }
+
+onMounted(() => {
+  void loadTypes();
+});
+
 </script>
 
 <style scoped>
