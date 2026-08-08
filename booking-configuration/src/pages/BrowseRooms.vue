@@ -17,13 +17,15 @@
 <div class="header-user">
             <q-btn flat round dense icon="notifications_none" class="notification-button" />
 
-            <q-avatar size="28px">
-              <img src="https://i.pravatar.cc/100?img=12" alt="User" />
-            </q-avatar>
+            <div class="header-profile" @click="goToProfile" style="cursor: pointer">
+              <q-avatar size="28px">
+                <img src="https://i.pravatar.cc/100?img=12" alt="User" />
+              </q-avatar>
 
-            <span class="username"> {{ currentUser?.name || 'User' }} </span>
+              <span class="username"> {{ currentUser?.name || 'User' }} </span>
 
-            <q-icon name="keyboard_arrow_down" size="14px" />
+              <q-icon name="keyboard_arrow_down" size="14px" />
+            </div>
           </div>
         </div>
 
@@ -334,6 +336,7 @@
 import { computed, onMounted, ref } from 'vue';
 
 import { useQuasar } from 'quasar';
+import { useRouter } from 'vue-router';
 import api from '@/services/api';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
@@ -354,6 +357,8 @@ interface Room {
    ========================================================== */
 
 const $q = useQuasar();
+
+const router = useRouter();
 
 const studyroomStore = useStudyroomStore();
 
@@ -383,22 +388,32 @@ const rooms = ref<Room[]>([]);
 
 const loading = ref(false);
 
-/* Room names already booked by the current user (for the selected date) */
-const bookedRoomNames = ref<Set<string>>(new Set());
+/* Rooms already booked by the current user, keyed by date (YYYY-MM-DD) */
+const bookedRoomsByDate = ref<Record<string, Set<string>>>({});
 
 const loadRooms = async () => {
   loading.value = true;
   try {
     const [roomsRes, bookingsRes] = await Promise.all([
       api.get<{ rooms: Room[] }>('/rooms'),
-      api.get<{ bookings: { resource: string; status: string }[] }>('/bookings/my'),
+      api.get<{ bookings: { resource: string; status: string; date?: string }[] }>(
+        '/bookings/my',
+      ),
     ]);
     rooms.value = roomsRes.data.rooms;
 
     const activeBookings = (bookingsRes.data.bookings || []).filter(
       (b) => b.status === 'Confirmed' || b.status === 'Pending',
     );
-    bookedRoomNames.value = new Set(activeBookings.map((b) => b.resource));
+
+    const byDate: Record<string, Set<string>> = {};
+    for (const b of activeBookings) {
+      const date = b.date || today;
+      const set = byDate[date] ?? new Set<string>();
+      set.add(b.resource);
+      byDate[date] = set;
+    }
+    bookedRoomsByDate.value = byDate;
   } catch (error) {
     console.error('Failed to load rooms', error);
     $q.notify({ type: 'negative', message: 'Failed to load rooms.' });
@@ -427,9 +442,12 @@ const filteredRooms = computed(() => {
   const selectedCapacity = capacityMap[filters.value.capacity] ?? 0;
   const hoursRange = timeFrames[filters.value.time];
 
+  // Rooms already booked by this user on the currently selected date
+  const bookedOnSelectedDate = bookedRoomsByDate.value[filters.value.date] ?? new Set<string>();
+
   return rooms.value.filter((room: Room) => {
-    // Already booked by this user -> hide
-    if (bookedRoomNames.value.has(room.name)) {
+    // Already booked by this user on the selected date -> hide
+    if (bookedOnSelectedDate.has(room.name)) {
       return false;
     }
 
@@ -463,6 +481,10 @@ const selectRoom = (room: Room) => {
 
 const clearSelectedRoom = () => {
   selectedRoom.value = null;
+};
+
+const goToProfile = () => {
+  void router.push('/profile');
 };
 
 /* ==========================================================
@@ -713,7 +735,10 @@ const confirmBooking = async () => {
     });
 
     // Hide the booked room from the browse list (dynamic update)
-    bookedRoomNames.value.add(selectedRoom.value.name);
+    const dateKey = booking.value.date;
+    const bookedSet = bookedRoomsByDate.value[dateKey] ?? new Set<string>();
+    bookedSet.add(selectedRoom.value.name);
+    bookedRoomsByDate.value[dateKey] = bookedSet;
     clearSelectedRoom();
 
     $q.notify({
@@ -829,6 +854,14 @@ const formatPrice = (value: number): string => {
   color: #444b60;
 
   font-size: 8px;
+}
+
+.header-profile {
+  display: flex;
+
+  align-items: center;
+
+  gap: 5px;
 }
 
 .notification-button {

@@ -79,9 +79,14 @@ function confirmLogout() {
     message: 'Are you sure you want to logout?',
     cancel: true,
     persistent: true,
-  }).onOk(() => {
+}).onOk(() => {
     studyroomStore.logout();
-    Notify.create({ type: 'positive', message: 'Logged out successfully.' });
+    Notify.create({
+      type: 'positive',
+      message: 'Logged out successfully.',
+      position: 'center',
+      timeout: 1200,
+    });
     void router.push('/login');
   });
 }

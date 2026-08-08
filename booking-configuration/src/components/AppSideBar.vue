@@ -82,7 +82,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useQuasar } from 'quasar';
+import { useQuasar, Notify } from 'quasar';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
 // ───────────────────────────────────────────────
@@ -214,8 +214,14 @@ const logout = () => {
     message: 'Are you sure you want to logout?',
     cancel: true,
     persistent: true,
-  }).onOk(() => {
+}).onOk(() => {
     studyroomStore.logout();
+    Notify.create({
+      type: 'positive',
+      message: 'Logged out successfully.',
+      position: 'center',
+      timeout: 1200,
+    });
     void router.push('/login');
   });
 };
