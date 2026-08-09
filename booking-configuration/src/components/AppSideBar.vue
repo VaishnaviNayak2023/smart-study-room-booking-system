@@ -82,7 +82,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useQuasar, Notify } from 'quasar';
+import { Notify } from 'quasar';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
 // ───────────────────────────────────────────────
@@ -116,7 +116,6 @@ const props = defineProps({
 
 const router = useRouter();
 const route = useRoute();
-const $q = useQuasar();
 const studyroomStore = useStudyroomStore();
 
 const drawerOpen = ref(true);
@@ -209,21 +208,19 @@ const goToBooking = () => {
 };
 
 const logout = () => {
-  $q.dialog({
-    title: 'Logout',
-    message: 'Are you sure you want to logout?',
-    cancel: true,
-    persistent: true,
-}).onOk(() => {
-    studyroomStore.logout();
-    Notify.create({
-      type: 'positive',
-      message: 'Logged out successfully.',
-      position: 'center',
-      timeout: 1200,
-    });
-    void router.push('/login');
+  const shouldLogout = window.confirm('Are you sure you want to logout?');
+  if (!shouldLogout) {
+    return;
+  }
+
+  studyroomStore.logout();
+  Notify.create({
+    type: 'positive',
+    message: 'Logged out successfully.',
+    position: 'center',
+    timeout: 1200,
   });
+  void router.replace('/login');
 };
 </script>
 

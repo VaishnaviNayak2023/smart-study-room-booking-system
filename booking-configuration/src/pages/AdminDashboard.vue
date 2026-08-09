@@ -67,9 +67,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { Notify } from 'quasar';
 import api from '@/services/api';
+import { useDashboardEvents } from '@/stores/dashboard-events';
 
 type DashboardStats = {
   totalResources: number;
@@ -106,6 +107,7 @@ const columns = [
 ];
 
 const bookings = ref<BookingRow[]>([]);
+const dashboardEvents = useDashboardEvents();
 
 const loadDashboard = async () => {
   loading.value = true;
@@ -121,8 +123,20 @@ const loadDashboard = async () => {
   }
 };
 
+let stopWatcher: (() => void) | undefined;
+
 onMounted(() => {
   void loadDashboard();
+  stopWatcher = watch(
+    () => dashboardEvents.version,
+    () => {
+      void loadDashboard();
+    },
+  );
+});
+
+onUnmounted(() => {
+  stopWatcher?.();
 });
 
 </script>

@@ -338,6 +338,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
 import api from '@/services/api';
+import { emitDashboardRefresh } from '@/stores/dashboard-events';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
 /* ==========================================================
@@ -403,7 +404,8 @@ const loadRooms = async () => {
     rooms.value = roomsRes.data.rooms;
 
     const activeBookings = (bookingsRes.data.bookings || []).filter(
-      (b) => b.status === 'Confirmed' || b.status === 'Pending',
+      (b: { status: string; resource: string; date?: string }) =>
+        b.status === 'Confirmed' || b.status === 'Pending',
     );
 
     const byDate: Record<string, Set<string>> = {};
@@ -733,6 +735,8 @@ const confirmBooking = async () => {
       amount: `₹${formatPrice(priceSummary.value.total)}`,
       status: 'Confirmed',
     });
+
+    emitDashboardRefresh();
 
     // Hide the booked room from the browse list (dynamic update)
     const dateKey = booking.value.date;

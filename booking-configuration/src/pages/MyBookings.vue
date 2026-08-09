@@ -1,4 +1,4 @@
-<template>
+ <template>
   <q-page class="q-pa-lg bg-grey-1">
     <div class="row items-center justify-between q-mb-lg">
       <div>
@@ -129,10 +129,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { Notify, useQuasar } from 'quasar';
+import { Notify } from 'quasar';
 import api from '@/services/api';
-
-const $q = useQuasar();
+import { emitDashboardRefresh } from '@/stores/dashboard-events';
 
 type Booking = {
   id: string;
@@ -197,7 +196,7 @@ const filteredBookings = computed(() => {
 const loadMyBookings = async () => {
   try {
     const { data } = await api.get<{ bookings: RawBooking[] }>('/bookings/my');
-    bookings.value = data.bookings.map((b) => ({
+    bookings.value = data.bookings.map((b: RawBooking) => ({
       id: b.id,
       resource: b.resource,
       datetime: b.datetime,
@@ -205,13 +204,15 @@ const loadMyBookings = async () => {
       amount: b.amount,
     }));
     stats.value.totalBookings = bookings.value.length;
-    const hours = data.bookings.reduce((acc, b) => {
+    const hours = data.bookings.reduce((acc: number, b: RawBooking) => {
       const m = String(b.datetime || '').match(/(\d+)\s*Hours?/i);
       return acc + (m ? Number(m[1]) : 0);
     }, 0);
     stats.value.hoursLogged = hours;
     const next =
-      data.bookings.find((b) => b.status === 'Confirmed' || b.status === 'Pending') || null;
+      data.bookings.find(
+        (b: RawBooking) => b.status === 'Confirmed' || b.status === 'Pending',
+      ) || null;
     upcoming.value = next
       ? {
           id: next.id,
@@ -250,20 +251,18 @@ function viewBooking(row: Booking) {
 }
 
 function cancelBooking(row: { id: string; resource: string }) {
-  $q.dialog({
-    title: 'Cancel Booking',
-    message: `Do you want to cancel "${row.resource}"?`,
-    cancel: { label: 'No', flat: true, color: 'grey-6' },
-    ok: { label: 'Yes', color: 'negative' },
-    persistent: true,
-  }).onOk(() => {
-    void doCancel(row);
-  });
+  const shouldCancel = window.confirm(`Do you want to cancel "${row.resource}"?`);
+  if (!shouldCancel) {
+    return;
+  }
+
+  void doCancel(row);
 }
 
 async function doCancel(row: { id: string; resource: string }) {
   try {
     await api.delete(`/bookings/${row.id}`);
+    emitDashboardRefresh();
     Notify.create({ type: 'positive', message: `${row.resource} cancelled.` });
     await loadMyBookings();
   } catch (error) {

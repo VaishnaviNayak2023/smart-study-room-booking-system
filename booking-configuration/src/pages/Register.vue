@@ -113,3 +113,4 @@ async function handleRegister() {
   font-weight: 600;
 }
 </style>
+

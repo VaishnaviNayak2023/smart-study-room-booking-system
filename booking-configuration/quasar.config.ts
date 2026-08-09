@@ -37,7 +37,7 @@ export default defineConfig((ctx) => {
         // node: 'node22'
       },
 
-      typescript: {
+typescript: {
         strict: true,
         vueShim: true,
         // extendTsConfig (tsConfig) {}
@@ -116,11 +116,11 @@ export default defineConfig((ctx) => {
       // (like functional components as one of the examples),
       // you can manually specify Quasar components/directives to be available everywhere:
       //
-      // components: [],
+// components: [],
       // directives: [],
 
       // Quasar plugins
-      plugins: [],
+      plugins: ['Notify', 'Dialog', 'Dark'],
     },
 
     // animations: 'all', // --- includes all animations

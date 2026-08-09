@@ -167,9 +167,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '@/services/api';
+import { useDashboardEvents } from '@/stores/dashboard-events';
 
 const router = useRouter();
 
@@ -198,7 +199,7 @@ const stats = ref<Stat[]>([
 ]);
 
 const allBookings = ref<MyBooking[]>([]);
-
+const dashboardEvents = useDashboardEvents();
 const upcoming = ref<MyBooking | null>(null);
 
 const filteredBookings = computed(() => {
@@ -244,8 +245,20 @@ const loadUserDashboard = async () => {
   }
 };
 
+let stopWatcher: (() => void) | undefined;
+
 onMounted(() => {
   void loadUserDashboard();
+  stopWatcher = watch(
+    () => dashboardEvents.version,
+    () => {
+      void loadUserDashboard();
+    },
+  );
+});
+
+onUnmounted(() => {
+  stopWatcher?.();
 });
 
 function browseRooms() {
