@@ -4,11 +4,20 @@ import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = Router();
 
+function parseSettingsData(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
 /* GET /api/settings */
 router.get('/', authenticate, async (req, res) => {
   const row = await db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  const data = row ? JSON.parse(row.data) : {};
-  res.json({ settings: data });
+  res.json({ settings: parseSettingsData(row?.data) });
 });
 
 /* PUT /api/settings */
@@ -21,7 +30,7 @@ router.put('/', authenticate, authorize('admin'), async (req, res) => {
     await db.prepare('INSERT INTO settings (id, data) VALUES (1, ?)').run(JSON.stringify(body));
   }
   const row = await db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  res.json({ settings: JSON.parse(row.data) });
+  res.json({ settings: parseSettingsData(row?.data) });
 });
 
 export default router;

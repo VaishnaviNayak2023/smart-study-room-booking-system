@@ -1,1 +1,47 @@
 // app global css
+:root {
+  --portal-bg: #f8fafc;
+  --portal-card: #ffffff;
+  --portal-border: #e5e7eb;
+  --portal-primary: #1e3a8a;
+  --portal-text: #111827;
+  --portal-muted: #64748b;
+  --portal-radius: 12px;
+}
+
+body {
+  background: var(--portal-bg);
+  color: var(--portal-text);
+}
+
+.portal-page {
+  background: var(--portal-bg);
+  min-height: 100%;
+  padding: 24px 28px 40px;
+}
+
+.portal-card {
+  background: var(--portal-card);
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius);
+}
+
+.portal-empty,
+.portal-error,
+.portal-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 160px;
+  color: var(--portal-muted);
+  text-align: center;
+  padding: 24px;
+}
+
+@media (max-width: 700px) {
+  .portal-page {
+    padding: 16px;
+  }
+}

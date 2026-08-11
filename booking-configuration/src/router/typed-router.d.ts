@@ -80,6 +80,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/Notifications': RouteRecordInfo<
+      '/Notifications',
+      '/Notifications',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/PricingRules': RouteRecordInfo<
       '/PricingRules',
       '/PricingRules',
@@ -132,6 +139,13 @@ declare module 'vue-router/auto-routes' {
     '/UserDashboardPage': RouteRecordInfo<
       '/UserDashboardPage',
       '/UserDashboardPage',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/UserSettings': RouteRecordInfo<
+      '/UserSettings',
+      '/UserSettings',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -205,6 +219,14 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
+    'src/pages/Notifications.vue': {
+      routes:
+        | '/Notifications'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
     'src/pages/PricingRules.vue': {
       routes:
         | '/PricingRules'
@@ -264,6 +286,14 @@ declare module 'vue-router/auto-routes' {
     'src/pages/UserDashboardPage.vue': {
       routes:
         | '/UserDashboardPage'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/UserSettings.vue': {
+      routes:
+        | '/UserSettings'
       views:
         | never
       pathParamNames:

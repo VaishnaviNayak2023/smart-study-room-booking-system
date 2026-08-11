@@ -20,6 +20,8 @@ import RegisterPage from '@/pages/Register.vue';
 import ProfilePage from '@/pages/Profile.vue';
 import BrowseRooms from '@/pages/BrowseRooms.vue';
 import MyBookings from '@/pages/MyBookings.vue';
+import NotificationsPage from '@/pages/Notifications.vue';
+import UserSettingsPage from '@/pages/UserSettings.vue';
 import ErrorNotFound from '@/pages/ErrorNotFound.vue';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
@@ -45,6 +47,8 @@ export default defineRouter((/* { store, ssrContext } */) => {
     },
     { path: '/my-bookings', component: MyBookings, meta: { requiresAuth: true } },
     { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
+    { path: '/notifications', component: NotificationsPage, meta: { requiresAuth: true } },
+    { path: '/user-settings', component: UserSettingsPage, meta: { requiresAuth: true } },
 
     // Admin routes
     {

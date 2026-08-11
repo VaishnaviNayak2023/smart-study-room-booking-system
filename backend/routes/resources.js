@@ -59,7 +59,12 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
 
 /* DELETE /api/resources/:id */
 router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
-  const info = await db.prepare('DELETE FROM resources WHERE id = ?').run(req.params.id);
+  const id = req.params.id;
+  const existing = await db.prepare('SELECT id FROM resources WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ message: 'Resource not found.' });
+
+  await db.prepare('UPDATE bookings SET resource_id = NULL WHERE resource_id = ?').run(id);
+  const info = await db.prepare('DELETE FROM resources WHERE id = ?').run(id);
   if (info.affectedRows === 0) return res.status(404).json({ message: 'Resource not found.' });
   res.json({ message: 'Resource deleted.' });
 });

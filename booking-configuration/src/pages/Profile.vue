@@ -152,8 +152,8 @@ async function saveProfile() {
 <style scoped>
 .profile-page {
   min-height: 100%;
-  padding: 22px 25px;
-  background: #f7f8fc;
+  padding: 24px 28px 40px;
+  background: #f8fafc;
 }
 
 .profile-container {
@@ -167,19 +167,19 @@ async function saveProfile() {
 
 .profile-title {
   color: #111827;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: clamp(26px, 3vw, 32px);
+  font-weight: 750;
 }
 
 .profile-subtitle {
-  margin-top: 4px;
-  color: #73798b;
-  font-size: 11px;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 14px;
 }
 
 .profile-card {
-  border-color: #e0e3ed;
-  border-radius: 8px;
+  border-color: #e5e7eb;
+  border-radius: 14px;
   background: #fff;
 }
 
@@ -194,7 +194,7 @@ async function saveProfile() {
 }
 
 .profile-avatar {
-  background: #5148e8;
+  background: #1e3a8a;
   color: #fff;
   font-size: 28px;
   font-weight: 700;
@@ -211,20 +211,20 @@ async function saveProfile() {
 .profile-name {
   margin-top: 14px;
   color: #111827;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
 }
 
 .profile-email {
-  margin-top: 3px;
-  color: #73798b;
-  font-size: 11px;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .role-badge {
   margin-top: 10px;
   padding: 4px 10px;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.5px;
 }
 
@@ -237,19 +237,20 @@ async function saveProfile() {
   align-items: center;
   gap: 8px;
   padding: 6px 0;
-  color: #454c60;
-  font-size: 11px;
+  color: #475569;
+  font-size: 13px;
 }
 
 .form-title {
   color: #111827;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .save-btn {
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 20px;
-  border-radius: 6px;
+  border-radius: 10px;
+  background: #1e3a8a;
 }
 </style>

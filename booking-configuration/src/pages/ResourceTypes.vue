@@ -1,233 +1,117 @@
 <template>
-  <q-page class="resource-types-page">
-    <div class="rt-container">
-      <!-- Header -->
-      <div class="page-header">
-        <div>
-          <div class="page-title">Resource Types</div>
-          <div class="page-subtitle">Categorize the types of bookable resources.</div>
-        </div>
-
-        <q-btn unelevated no-caps color="primary" icon="add" label="New Type" @click="addType" />
+  <q-page class="portal-page resource-types-page">
+    <div class="page-header">
+      <div>
+        <h1>Resource Categories</h1>
+        <p>Manage the organizational structure and base properties for all bookable assets.</p>
       </div>
-
-      <!-- Cards -->
-      <div class="row q-col-gutter-md">
-        <div v-for="type in resourceTypes" :key="type.id" class="col-12 col-sm-6 col-md-4">
-          <q-card flat bordered class="type-card">
-            <q-card-section class="type-card-section">
-              <div class="type-icon" :class="`type-icon-${type.color}`">
-                <q-icon :name="type.icon" size="22px" />
-              </div>
-
-              <div class="type-name">{{ type.name }}</div>
-              <div class="type-count">{{ type.resources }} resources</div>
-
-              <q-separator class="q-my-sm" />
-
-              <div class="type-description">
-                {{ type.description }}
-              </div>
-
-              <div class="type-actions q-mt-sm">
-                <q-btn flat dense round icon="edit" size="sm" @click="editType(type)" />
-                <q-btn
-                  flat
-                  dense
-                  round
-                  icon="delete"
-                  color="negative"
-                  size="sm"
-                  @click="deleteType(type)"
-                />
-              </div>
-            </q-card-section>
-          </q-card>
-        </div>
-      </div>
+      <q-input v-model="search" outlined dense clearable placeholder="Search categories..." style="max-width: 280px">
+        <template #prepend><q-icon name="search" /></template>
+      </q-input>
     </div>
+
+    <div v-if="loading" class="portal-loading"><q-spinner color="primary" size="32px" /> Loading categories…</div>
+    <div v-else-if="error" class="portal-error"><div>{{ error }}</div><q-btn unelevated no-caps color="primary" label="Retry" @click="loadTypes" /></div>
+    <div v-else class="types-grid">
+      <q-card v-for="type in filteredTypes" :key="type.id" flat bordered class="type-card">
+        <q-card-section>
+          <div class="type-top">
+            <div class="type-icon" :class="`type-icon-${type.color}`"><q-icon :name="type.icon" size="20px" /></div>
+            <q-btn flat round dense icon="edit" @click="openEdit(type)" />
+          </div>
+          <div class="type-name">{{ type.name }}</div>
+          <div class="type-description">{{ type.description || 'No description provided.' }}</div>
+          <q-separator class="q-my-md" />
+          <div class="type-footer">
+            <div>
+              <div class="type-count">{{ type.resources }}</div>
+              <div class="type-count-label">Active Resources</div>
+            </div>
+            <span class="status-dot active">Active</span>
+          </div>
+        </q-card-section>
+      </q-card>
+
+      <q-card flat bordered class="type-card add-card" clickable @click="openCreate">
+        <q-card-section class="add-body">
+          <div class="add-icon"><q-icon name="add" size="28px" /></div>
+          <div class="add-title">Add New Category</div>
+          <div class="add-sub">Create a new organizational bucket for your resources.</div>
+        </q-card-section>
+      </q-card>
+    </div>
+
+    <ResourceTypeFormDialog v-model="formOpen" :resource-type="editing" @saved="loadTypes" />
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { Notify } from 'quasar';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import api from '@/services/api';
+import ResourceTypeFormDialog from '@/components/admin/ResourceTypeFormDialog.vue';
+import { useDashboardEvents } from '@/stores/dashboard-events';
+import type { ResourceType, ResourceTypeFormData } from '@/types/resources';
 
-type ResourceType = {
-  id: number;
-  name: string;
-  icon: string;
-  color: string;
-  resources: number;
-  description: string;
-};
-
+const route = useRoute();
+const dashboardEvents = useDashboardEvents();
+const loading = ref(true);
+const error = ref('');
 const resourceTypes = ref<ResourceType[]>([]);
+const search = ref(typeof route.query.q === 'string' ? route.query.q : '');
+const formOpen = ref(false);
+const editing = ref<ResourceTypeFormData | null>(null);
 
-const loadTypes = async () => {
-  try {
-    const { data } = await api.get<{ resourceTypes: ResourceType[] }>('/resource-types');
-    resourceTypes.value = data.resourceTypes;
-  } catch (error) {
-    console.error('Failed to load resource types', error);
-  }
-};
-
-function addType() {
-  const name = window.prompt('Type name');
-  if (!name) return;
-  const description = window.prompt('Description', '') || '';
-  void api
-    .post('/resource-types', { name, description })
-    .then(() => {
-      Notify.create({ type: 'positive', message: 'Type added.' });
-      void loadTypes();
-    })
-    .catch((error) => {
-      console.error('Add failed', error);
-      Notify.create({ type: 'negative', message: 'Failed to add type.' });
-    });
-}
-
-function editType(type: ResourceType) {
-  const name = window.prompt('Type name', type.name);
-  if (!name) return;
-  const description = window.prompt('Description', type.description) || '';
-  void api
-    .put(`/resource-types/${type.id}`, { name, description })
-    .then(() => {
-      Notify.create({ type: 'positive', message: `Updated ${name}.` });
-      void loadTypes();
-    })
-    .catch((error) => {
-      console.error('Update failed', error);
-      Notify.create({ type: 'negative', message: 'Failed to update type.' });
-    });
-}
-
-function deleteType(type: ResourceType) {
-  void api
-    .delete(`/resource-types/${type.id}`)
-    .then(() => {
-      Notify.create({ type: 'negative', message: `Deleted ${type.name}` });
-      void loadTypes();
-    })
-    .catch((error) => {
-      console.error('Delete failed', error);
-      Notify.create({ type: 'negative', message: 'Failed to delete type.' });
-    });
-}
-
-onMounted(() => {
-  void loadTypes();
+const filteredTypes = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  return resourceTypes.value.filter((type) =>
+    [type.name, type.description].join(' ').toLowerCase().includes(q),
+  );
 });
 
+async function loadTypes() {
+  loading.value = true;
+  error.value = '';
+  try {
+    const { data } = await api.get<{ resourceTypes: ResourceType[] }>('/resource-types');
+    resourceTypes.value = data.resourceTypes || [];
+  } catch {
+    error.value = 'Unable to load resource categories.';
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openCreate() { editing.value = null; formOpen.value = true; }
+function openEdit(type: ResourceType) { editing.value = { id: type.id, name: type.name, description: type.description, icon: type.icon, color: type.color }; formOpen.value = true; }
+
+watch(() => route.query.q, (value) => { search.value = typeof value === 'string' ? value : ''; });
+watch(() => dashboardEvents.version, () => { void loadTypes(); });
+onMounted(() => { void loadTypes(); });
 </script>
 
 <style scoped>
-.resource-types-page {
-  min-height: 100%;
-  padding: 22px 25px;
-  background: #f7f8fc;
-}
-
-.rt-container {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.page-title {
-  color: #111827;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.page-subtitle {
-  margin-top: 4px;
-  color: #73798b;
-  font-size: 11px;
-}
-
-.type-card {
-  border-color: #e0e3ed;
-  border-radius: 8px;
-  background: #fff;
-  height: 100%;
-}
-
-.type-card-section {
-  padding: 18px;
-}
-
-.type-icon {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-}
-
-.type-icon-purple {
-  color: #5753e8;
-  background: #e8e9ff;
-}
-
-.type-icon-blue {
-  color: #3b82f6;
-  background: #e0edff;
-}
-
-.type-icon-green {
-  color: #168c70;
-  background: #ddf4eb;
-}
-
-.type-icon-orange {
-  color: #e07a2f;
-  background: #fff0e0;
-}
-
-.type-icon-red {
-  color: #e04545;
-  background: #ffe6e6;
-}
-
-.type-icon-teal {
-  color: #0d9488;
-  background: #d9f3f0;
-}
-
-.type-name {
-  margin-top: 12px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.type-count {
-  margin-top: 3px;
-  color: #73798b;
-  font-size: 10px;
-}
-
-.type-description {
-  color: #5b6377;
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.type-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-}
+.page-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; }
+.page-header h1 { margin: 0; font-size: clamp(26px, 3vw, 32px); font-weight: 750; }
+.page-header p { margin: 6px 0 0; color: #64748b; max-width: 560px; }
+.types-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.type-card { border-radius: 14px; border-color: #e5e7eb; min-height: 220px; }
+.type-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.type-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: #eef2ff; color: #1e3a8a; }
+.type-icon-purple { background: #ede9fe; color: #6d28d9; }
+.type-icon-green { background: #dcfce7; color: #15803d; }
+.type-icon-orange { background: #ffedd5; color: #c2410c; }
+.type-name { margin-top: 12px; font-size: 16px; font-weight: 700; }
+.type-description { margin-top: 6px; color: #64748b; font-size: 13px; line-height: 1.45; min-height: 40px; }
+.type-footer { display: flex; justify-content: space-between; align-items: flex-end; }
+.type-count { font-size: 24px; font-weight: 700; }
+.type-count-label { color: #64748b; font-size: 12px; }
+.status-dot { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; }
+.add-card { border-style: dashed; background: #fafafa; }
+.add-body { height: 100%; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
+.add-icon { width: 48px; height: 48px; border-radius: 50%; background: #eef2ff; color: #1e3a8a; display: flex; align-items: center; justify-content: center; }
+.add-title { font-weight: 700; }
+.add-sub { color: #64748b; font-size: 13px; max-width: 220px; }
+@media (max-width: 1000px) { .types-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .types-grid { grid-template-columns: 1fr; } }
 </style>

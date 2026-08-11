@@ -14,6 +14,8 @@ import pricingRoutes from './routes/pricing.js';
 import settingsRoutes from './routes/settings.js';
 import dashboardRoutes from './routes/dashboard.js';
 import reportsRoutes from './routes/reports.js';
+import notificationsRoutes from './routes/notifications.js';
+import userPreferencesRoutes from './routes/userPreferences.js';
 
 /**
  * Build the Express application without starting an HTTP listener.
@@ -95,6 +97,8 @@ export function createApp() {
   app.use('/api/settings', settingsRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/reports', reportsRoutes);
+  app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/user-preferences', userPreferencesRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

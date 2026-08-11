@@ -1,270 +1,320 @@
 <template>
-  <q-page class="dashboard-page">
-    <!-- Header -->
-    <div class="dashboard-header">
-      <div>
-        <h1 class="welcome-title">Welcome{{ currentUserName ? `, ${currentUserName}` : '' }}.</h1>
-        <p class="welcome-subtitle">Here's what's happening today.</p>
-      </div>
-
-      <q-input
-        v-model="search"
-        dense
-        outlined
-        rounded
-        placeholder="Search rooms, bookings..."
-        class="search-input"
-        debounce="300"
-      >
-        <template #prepend>
-          <q-icon name="search" />
-        </template>
-      </q-input>
+  <q-page class="portal-page dashboard-page">
+    <div v-if="loading" class="portal-loading">
+      <q-spinner color="primary" size="36px" />
+      Loading dashboard…
     </div>
 
-    <!-- Statistics -->
-    <div class="row q-col-gutter-md q-mb-lg">
-      <div v-for="stat in stats" :key="stat.label" class="col-12 col-sm-6 col-md-3">
-        <q-card flat bordered class="stat-card">
+    <div v-else-if="error" class="portal-error">
+      <q-icon name="error_outline" size="32px" color="negative" />
+      <div>{{ error }}</div>
+      <q-btn unelevated no-caps color="primary" label="Retry" @click="loadDashboard" />
+    </div>
+
+    <template v-else>
+      <div class="dashboard-header">
+        <div>
+          <h1 class="welcome-title">Welcome back{{ displayName ? `, ${displayName}` : '' }}.</h1>
+          <p class="welcome-subtitle">Here is your workspace overview for today.</p>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <q-card v-for="stat in statsCards" :key="stat.label" flat bordered class="stat-card">
           <q-card-section>
             <div class="stat-header">
-              <div class="stat-label">
-                {{ stat.label }}
-              </div>
-
-              <div class="stat-icon" :class="`stat-icon-${stat.color}`">
-                <q-icon :name="stat.icon" size="16px" />
-              </div>
+              <div class="stat-label">{{ stat.label }}</div>
+              <div class="stat-icon"><q-icon :name="stat.icon" size="18px" /></div>
             </div>
-
-            <div class="stat-value">
-              {{ stat.value }}
-            </div>
+            <div class="stat-value">{{ stat.value }}</div>
+            <div v-if="stat.sub" class="stat-sub" :class="{ positive: stat.positive }">{{ stat.sub }}</div>
           </q-card-section>
         </q-card>
       </div>
-    </div>
 
-    <!-- Main content -->
-    <div class="row q-col-gutter-md">
-      <!-- Upcoming booking -->
-      <div class="col-12 col-md-8">
-        <div class="section-title">Next Upcoming Booking</div>
+      <div class="main-grid">
+        <div class="upcoming-col">
+          <div class="section-title-row">
+            <div class="section-title">Next Upcoming Booking</div>
+            <q-badge v-if="upcoming" class="status-badge" :class="statusClass(upcoming.status)">
+              <q-icon name="fiber_manual_record" size="8px" class="q-mr-xs" />
+              {{ upcoming.status }}
+            </q-badge>
+          </div>
 
-        <q-card v-if="upcoming" flat bordered class="booking-card q-mt-sm">
-          <div class="booking-banner"></div>
-
-          <q-card-section class="booking-section">
-            <div class="booking-header">
-              <div>
-                <q-badge class="confirmed-badge">
-                  <q-icon name="fiber_manual_record" size="7px" class="q-mr-xs" />
-                  {{ upcoming.status.toUpperCase() }}
-                </q-badge>
-
-                <div class="booking-resource">
-                  {{ upcoming.resource }}
-                </div>
-
-                <div class="booking-location">
-                  <q-icon name="schedule" size="13px" />
-                  {{ upcoming.datetime }}
-                </div>
-              </div>
-
-              <div class="booking-date">
-                <div>{{ upcoming.datetime }}</div>
-                <span>{{ upcoming.amount }}</span>
+          <q-card v-if="upcoming" flat bordered class="upcoming-card">
+            <div class="upcoming-media">
+              <q-img v-if="upcoming.image" :src="upcoming.image" :alt="upcoming.resource" fit="cover" />
+              <div v-else class="upcoming-placeholder">
+                <q-icon name="meeting_room" size="42px" />
               </div>
             </div>
-
-            <!-- Booked slot -->
-            <div class="booking-info q-mt-lg">
-              <div class="booking-info-item">
-                <div class="info-icon">
-                  <q-icon name="calendar_month" size="17px" />
-                </div>
-
+            <q-card-section class="upcoming-body">
+              <div class="upcoming-name">{{ upcoming.resource }}</div>
+              <div class="upcoming-meta">
+                <span v-if="upcoming.location">{{ upcoming.location }}</span>
+                <span v-if="upcoming.capacity"> • Capacity: {{ upcoming.capacity }}</span>
+              </div>
+              <div class="upcoming-schedule">
                 <div>
-                  <div class="info-label">Selected Slot</div>
-                  <div class="info-value">
-                    {{ upcoming.datetime }}
-                  </div>
+                  <div class="label">Date</div>
+                  <div class="value">{{ formatDate(upcoming.date) }}</div>
+                </div>
+                <div>
+                  <div class="label">Time</div>
+                  <div class="value">{{ upcoming.startTime }} - {{ upcoming.endTime }}</div>
                 </div>
               </div>
-            </div>
+              <div class="upcoming-actions">
+                <q-btn unelevated no-caps icon="edit" label="Modify" class="modify-btn" @click="openModify" />
+                <q-btn outline no-caps label="Cancel" class="cancel-btn" @click="cancelOpen = true" />
+              </div>
+            </q-card-section>
+          </q-card>
 
-            <!-- Buttons -->
-            <div class="booking-actions">
-              <q-btn
-                outline
-                no-caps
-                color="primary"
-                label="My Bookings"
-                class="cancel-btn"
-                @click="browseRooms"
-              />
-            </div>
-          </q-card-section>
-        </q-card>
-        <q-card v-else flat bordered class="booking-card q-mt-sm">
-          <q-card-section class="booking-section">
-            <div class="booking-resource">No upcoming bookings</div>
-            <div class="booking-location">Browse rooms to reserve your next study space.</div>
-          </q-card-section>
-        </q-card>
+          <q-card v-else flat bordered class="upcoming-card empty-upcoming">
+            <q-card-section>
+              <div class="upcoming-name">No upcoming bookings</div>
+              <div class="upcoming-meta">Browse rooms to reserve your next workspace.</div>
+              <q-btn unelevated no-caps color="primary" label="Browse Rooms" class="q-mt-md" @click="goBrowse" />
+            </q-card-section>
+          </q-card>
+        </div>
+
+        <div class="actions-col">
+          <div class="section-title">Quick Actions</div>
+          <q-card
+            v-for="action in quickActions"
+            :key="action.title"
+            flat
+            bordered
+            class="action-card"
+            clickable
+            @click="action.run()"
+          >
+            <q-card-section class="action-row">
+              <div class="action-icon"><q-icon :name="action.icon" size="20px" /></div>
+              <div>
+                <div class="action-title">{{ action.title }}</div>
+                <div class="action-desc">{{ action.description }}</div>
+              </div>
+            </q-card-section>
+          </q-card>
+        </div>
       </div>
+    </template>
 
-      <!-- Quick actions -->
-      <div class="col-12 col-md-4">
-        <div class="section-title">Quick Actions</div>
+    <ModifyBookingDialog v-model="modifyOpen" :booking="upcoming" @saved="loadDashboard" />
 
-        <q-card flat bordered class="quick-card q-mt-sm" clickable @click="browseRooms">
-          <q-card-section class="quick-card-content">
-            <div class="quick-icon">
-              <q-icon name="search" size="18px" />
-            </div>
-
-            <div class="quick-text">
-              <div class="quick-title">Browse Rooms</div>
-
-              <div class="quick-description">Find and book a new space.</div>
-            </div>
-
-            <q-icon name="chevron_right" color="grey-6" size="20px" />
-          </q-card-section>
-        </q-card>
-
-        <q-card flat bordered class="quick-card q-mt-md" clickable @click="openBookings">
-          <q-card-section class="quick-card-content">
-            <div class="quick-icon">
-              <q-icon name="calendar_month" size="18px" />
-            </div>
-
-            <div class="quick-text">
-              <div class="quick-title">My Bookings</div>
-
-              <div class="quick-description">Manage your existing reservations.</div>
-            </div>
-
-            <q-icon name="chevron_right" color="grey-6" size="20px" />
-          </q-card-section>
-        </q-card>
-
-        <!-- Notice -->
-        <q-card flat class="notice-card q-mt-md">
-          <q-card-section>
-            <div class="notice-title">Exam Season is Here</div>
-
-            <div class="notice-description">
-              Study rooms are booking fast. Reserve your spot up to 7 days in advance.
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
-    </div>
+    <ConfirmDialog
+      v-model="cancelOpen"
+      title="Cancel Booking"
+      message="Are you sure you want to cancel this booking? This action cannot be undone."
+      confirm-label="Cancel Booking"
+      cancel-label="Go Back"
+      icon="warning"
+      variant="danger"
+      :loading="cancelling"
+      @confirm="confirmCancel"
+    >
+      <template v-if="upcoming" #details>
+        <div class="cancel-details">
+          <q-icon name="meeting_room" color="primary" />
+          <div>
+            <div class="cancel-details__title">{{ upcoming.resource }}</div>
+            <div class="cancel-details__meta">{{ upcoming.datetime }}</div>
+          </div>
+        </div>
+      </template>
+    </ConfirmDialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { Notify } from 'quasar';
 import api from '@/services/api';
-import { useDashboardEvents } from '@/stores/dashboard-events';
+import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
+import ModifyBookingDialog from '@/components/user/ModifyBookingDialog.vue';
+import { useStudyroomStore } from '@/stores/studyroom-store';
+import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
+import { useNotificationsStore } from '@/stores/notifications-store';
+import { appConfig } from '@/config/app';
 
-const router = useRouter();
-
-const search = ref('');
-
-const currentUserName = computed(() => {
-  const raw = localStorage.getItem('booking_user');
-  if (!raw) return '';
-
-  try {
-    const user = JSON.parse(raw);
-    return user?.name || '';
-  } catch {
-    return '';
-  }
-});
-
-type Stat = {
-  label: string;
-  value: number | string;
-  icon: string;
-  color: string;
-};
-
-type MyBooking = {
+type UpcomingBooking = {
   id: string;
   resource: string;
   datetime: string;
   status: string;
-  amount: string;
+  amount?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  purpose?: string;
+  notes?: string;
+  location?: string;
+  capacity?: number | null;
+  image?: string;
 };
 
-const stats = ref<Stat[]>([
-  { label: 'UPCOMING BOOKINGS', value: 0, icon: 'calendar_month', color: 'purple' },
-  { label: 'COMPLETED BOOKINGS', value: 0, icon: 'check_circle_outline', color: 'green' },
-  { label: 'HOURS BOOKED', value: 0, icon: 'schedule', color: 'grey' },
-  { label: 'TOTAL SPENT', value: '₹0', icon: 'payments', color: 'blue' },
-]);
+type DashboardStats = {
+  totalBookings: number;
+  upcoming: number;
+  completed: number;
+  hoursBooked: number;
+  totalSpent: number;
+  nextIn: string;
+};
 
-const allBookings = ref<MyBooking[]>([]);
+const router = useRouter();
+const studyroomStore = useStudyroomStore();
 const dashboardEvents = useDashboardEvents();
-const upcoming = ref<MyBooking | null>(null);
+const notificationsStore = useNotificationsStore();
 
-const filteredBookings = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return allBookings.value;
-  return allBookings.value.filter((b) =>
-    [b.resource, b.datetime, b.status, b.amount].join(' ').toLowerCase().includes(q),
-  );
+const loading = ref(true);
+const error = ref('');
+const modifyOpen = ref(false);
+const cancelOpen = ref(false);
+const cancelling = ref(false);
+const upcoming = ref<UpcomingBooking | null>(null);
+const stats = ref<DashboardStats>({
+  totalBookings: 0,
+  upcoming: 0,
+  completed: 0,
+  hoursBooked: 0,
+  totalSpent: 0,
+  nextIn: '',
 });
 
-const updateStats = () => {
-  const bookings = filteredBookings.value;
-  const upcomingCount = bookings.filter(
-    (b) => b.status === 'Confirmed' || b.status === 'Pending',
-  ).length;
-  const completedCount = bookings.filter((b) => b.status === 'Completed').length;
-  const hours = bookings.reduce((acc, b) => {
-    const m = String(b.datetime || '').match(/(\d+)\s*Hours?/i);
-    return acc + (m ? Number(m[1]) : 0);
-  }, 0);
-  const spent = bookings.reduce((acc, b) => {
-    const n = parseFloat(String(b.amount || '').replace(/[^\d.]/g, ''));
-    return acc + (isNaN(n) ? 0 : n);
-  }, 0);
+const displayName = computed(() => studyroomStore.currentUser?.name || '');
 
-  const s = stats.value;
-  s[0]!.value = upcomingCount;
-  s[1]!.value = completedCount;
-  s[2]!.value = hours;
-  s[3]!.value = `₹${spent}`;
+const statsCards = computed(() => [
+  {
+    label: 'Total Bookings',
+    value: stats.value.totalBookings,
+    icon: 'calendar_month',
+    sub: '',
+    positive: false,
+  },
+  {
+    label: 'Upcoming',
+    value: stats.value.upcoming,
+    icon: 'event_available',
+    sub: stats.value.nextIn || (stats.value.upcoming ? 'Scheduled' : 'None scheduled'),
+    positive: false,
+  },
+  {
+    label: 'Completed',
+    value: stats.value.completed,
+    icon: 'check_circle_outline',
+    sub: 'Finished bookings',
+    positive: false,
+  },
+  {
+    label: 'Hours Booked',
+    value: `${stats.value.hoursBooked}h`,
+    icon: 'timer',
+    sub: stats.value.totalSpent ? `Spent ${formatMoney(stats.value.totalSpent)}` : 'From your reservations',
+    positive: true,
+  },
+]);
 
-  upcoming.value =
-    bookings.find((b) => b.status === 'Confirmed' || b.status === 'Pending') || null;
-};
+const quickActions = [
+  {
+    title: 'Book a Workspace',
+    description: 'Find available desks or rooms.',
+    icon: 'add_circle_outline',
+    run: () => void router.push('/browse-rooms'),
+  },
+  {
+    title: 'My Bookings',
+    description: 'Manage your existing reservations.',
+    icon: 'calendar_month',
+    run: () => void router.push('/my-bookings'),
+  },
+  {
+    title: 'Profile',
+    description: 'Update your account details.',
+    icon: 'person_outline',
+    run: () => void router.push('/profile'),
+  },
+];
 
-const loadUserDashboard = async () => {
+function formatMoney(value: number) {
+  const currency = appConfig.defaultCurrency || 'USD';
   try {
-    const { data } = await api.get<{ bookings: MyBooking[] }>('/bookings/my');
-    allBookings.value = data.bookings || [];
-    updateStats();
-  } catch (error) {
-    console.error('Failed to load user dashboard', error);
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
+  } catch {
+    return value.toFixed(2);
   }
-};
+}
+
+function formatDate(value?: string) {
+  if (!value) return '';
+  const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function statusClass(status: string) {
+  const s = status.toLowerCase();
+  if (s === 'confirmed') return 'is-confirmed';
+  if (s === 'pending') return 'is-pending';
+  if (s === 'completed') return 'is-completed';
+  return '';
+}
+
+async function loadDashboard() {
+  loading.value = true;
+  error.value = '';
+  try {
+    const { data } = await api.get<{ stats: DashboardStats; upcoming: UpcomingBooking | null }>(
+      '/dashboard/user',
+    );
+    stats.value = data.stats;
+    upcoming.value = data.upcoming;
+  } catch {
+    error.value = 'Unable to load your dashboard right now.';
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openModify() {
+  modifyOpen.value = true;
+}
+
+function goBrowse() {
+  void router.push('/browse-rooms');
+}
+
+async function confirmCancel() {
+  if (!upcoming.value) return;
+  cancelling.value = true;
+  try {
+    await api.delete(`/bookings/${upcoming.value.id}`);
+    Notify.create({ type: 'positive', message: 'Booking cancelled.' });
+    cancelOpen.value = false;
+    emitDashboardRefresh();
+    await notificationsStore.refreshUnread();
+    await loadDashboard();
+  } catch {
+    Notify.create({ type: 'negative', message: 'Failed to cancel booking.' });
+  } finally {
+    cancelling.value = false;
+  }
+}
 
 let stopWatcher: (() => void) | undefined;
 
 onMounted(() => {
-  void loadUserDashboard();
+  void loadDashboard();
   stopWatcher = watch(
     () => dashboardEvents.version,
     () => {
-      void loadUserDashboard();
+      void loadDashboard();
+      void notificationsStore.refreshUnread();
     },
   );
 });
@@ -272,358 +322,270 @@ onMounted(() => {
 onUnmounted(() => {
   stopWatcher?.();
 });
-
-function browseRooms() {
-  void router.push('/browse-rooms');
-}
-
-function openBookings() {
-  void router.push('/my-bookings');
-}
 </script>
 
 <style scoped>
-.dashboard-page {
-  background: #f7f8fc;
-  min-height: 100%;
-  padding: 22px 25px;
-}
-
-/* Header */
-
 .dashboard-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 22px;
 }
 
 .welcome-title {
   margin: 0;
-  color: #111827;
-  font-size: 20px;
-  line-height: 1.2;
+  font-size: clamp(24px, 3vw, 30px);
   font-weight: 700;
+  color: #111827;
 }
 
 .welcome-subtitle {
-  margin: 4px 0 0;
-  color: #73798b;
-  font-size: 11px;
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
 }
 
-.search-input {
-  width: 235px;
-  background: #fff;
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
 }
-
-.search-input :deep(.q-field__control) {
-  height: 36px;
-}
-
-.search-input :deep(.q-field__native) {
-  font-size: 10px;
-}
-
-/* Section */
-
-.section-title {
-  color: #111827;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-/* Stats */
 
 .stat-card {
-  min-height: 104px;
-  border-color: #e0e3ed;
-  border-radius: 5px;
+  border-radius: 14px;
+  border-color: #e5e7eb;
   background: #fff;
-}
-
-.stat-card .q-card__section {
-  padding: 14px 16px;
 }
 
 .stat-header {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
+  align-items: flex-start;
 }
 
 .stat-label {
-  max-width: 100px;
-  color: #7c8293;
-  font-size: 8px;
-  line-height: 1.25;
+  color: #64748b;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.4px;
-}
-
-.stat-value {
-  margin-top: 12px;
-  color: #111827;
-  font-size: 20px;
-  line-height: 1;
-  font-weight: 700;
 }
 
 .stat-icon {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  background: #eef2ff;
+  color: #1e3a8a;
 }
 
-.stat-icon-purple {
-  color: #4f46e5;
-  background: #eef0ff;
+.stat-value {
+  margin-top: 14px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
 }
 
-.stat-icon-green {
-  color: #15966b;
-  background: #e8f7f0;
+.stat-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #64748b;
 }
 
-.stat-icon-grey {
-  color: #667085;
-  background: #f0f1f4;
+.stat-sub.positive {
+  color: #16a34a;
 }
 
-.stat-icon-blue {
-  color: #5367c9;
-  background: #e9edff;
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr);
+  gap: 20px;
 }
 
-/* Booking */
-
-.booking-card {
-  overflow: hidden;
-  border-color: #dfe2ec;
-  border-radius: 7px;
-  background: #fff;
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 12px;
 }
 
-.booking-banner {
-  height: 50px;
-
-  background-color: #5148e8;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
-  background-size: 14px 14px;
-}
-
-.booking-section {
-  padding: 0 20px 14px;
-}
-
-.booking-header {
+.section-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  margin-bottom: 12px;
 }
 
-.confirmed-badge {
-  padding: 4px 7px;
-  border-radius: 4px;
-  color: #17815f;
-  background: #e3f6ee;
-  font-size: 7px;
+.section-title-row .section-title {
+  margin-bottom: 0;
+}
+
+.status-badge {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
-.booking-resource {
-  margin-top: 6px;
-  color: #111827;
+.status-badge.is-confirmed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-badge.is-pending {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.status-badge.is-completed {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.upcoming-card {
+  border-radius: 14px;
+  overflow: hidden;
+  border-color: #e5e7eb;
+}
+
+.upcoming-media {
+  height: 180px;
+  background: #e2e8f0;
+}
+
+.upcoming-media :deep(.q-img),
+.upcoming-placeholder {
+  height: 180px;
+}
+
+.upcoming-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1e3a8a;
+  background: linear-gradient(135deg, #e0e7ff, #f8fafc);
+}
+
+.upcoming-body {
+  padding: 18px 20px 20px;
+}
+
+.upcoming-name {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.upcoming-meta {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.upcoming-schedule {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.upcoming-schedule .label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.upcoming-schedule .value {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.upcoming-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.modify-btn {
+  background: #1e3a8a;
+  color: #fff;
+  border-radius: 10px;
+}
+
+.cancel-btn {
+  border-color: #e5e7eb;
+  color: #475569;
+  border-radius: 10px;
+}
+
+.action-card {
+  border-radius: 12px;
+  border-color: #e5e7eb;
+  margin-bottom: 12px;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.action-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef2ff;
+  color: #1e3a8a;
+}
+
+.action-title {
   font-size: 14px;
   font-weight: 700;
 }
 
-.booking-location {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin-top: 3px;
-  color: #72788b;
-  font-size: 8px;
-}
-
-.booking-date {
-  padding-top: 2px;
-  color: #5148e8;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: right;
-}
-
-.booking-date span {
-  display: block;
+.action-desc {
   margin-top: 2px;
-  color: #7c8293;
-  font-size: 8px;
-  font-weight: 400;
+  font-size: 12px;
+  color: #64748b;
 }
 
-/* Booking info */
-
-.booking-info {
+.cancel-details {
   display: flex;
+  gap: 12px;
   align-items: center;
-  min-height: 40px;
-  padding: 7px 10px;
-  border-radius: 5px;
-  background: #e8efff;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
 }
 
-.booking-info-item {
-  display: flex;
-  align-items: center;
-  flex: 1;
-}
-
-.info-icon {
-  width: 25px;
-  height: 25px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 8px;
-  border-radius: 50%;
-  color: #4f46e5;
-  background: #fff;
-}
-
-.info-label {
-  color: #73798b;
-  font-size: 7px;
-  line-height: 1;
-}
-
-.info-value {
-  margin-top: 3px;
-  color: #171b29;
-  font-size: 9px;
-  font-weight: 500;
-}
-
-/* Booking actions */
-
-.booking-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 13px;
-}
-
-.cancel-btn,
-.details-btn {
-  min-height: 26px;
-  padding: 0 12px;
-  border-radius: 4px;
-  font-size: 8px;
-}
-
-/* Quick actions */
-
-.quick-card {
-  border-color: #dfe2ec;
-  border-radius: 5px;
-  background: #fff;
-}
-
-.quick-card-content {
-  min-height: 49px;
-  display: flex;
-  align-items: center;
-  padding: 9px 10px;
-}
-
-.quick-icon {
-  width: 29px;
-  height: 29px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 5px;
-  color: #4f46e5;
-  background: #edf1ff;
-}
-
-.quick-text {
-  flex: 1;
-  margin-left: 10px;
-}
-
-.quick-title {
-  color: #252a3a;
-  font-size: 9px;
+.cancel-details__title {
   font-weight: 700;
 }
 
-.quick-description {
-  margin-top: 2px;
-  color: #7b8194;
-  font-size: 8px;
+.cancel-details__meta {
+  font-size: 12px;
+  color: #64748b;
 }
 
-/* Notice */
-
-.notice-card {
-  border-radius: 5px;
-  background: #e7edff;
-}
-
-.notice-card .q-card__section {
-  padding: 11px;
-}
-
-.notice-title {
-  color: #252a3a;
-  font-size: 9px;
-  font-weight: 700;
-}
-
-.notice-description {
-  margin-top: 3px;
-  color: #626a80;
-  font-size: 8px;
-  line-height: 1.45;
-}
-
-/* Responsive */
-
-@media (max-width: 900px) {
-  .dashboard-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
+@media (max-width: 1000px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .search-input {
-    width: 100%;
+  .main-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 600px) {
-  .dashboard-page {
-    padding: 16px;
+  .stats-grid {
+    grid-template-columns: 1fr;
   }
 
-  .booking-header {
-    gap: 12px;
-  }
-
-  .booking-info {
-    align-items: flex-start;
+  .upcoming-actions {
     flex-direction: column;
-    gap: 10px;
-  }
-
-  .booking-info-item {
-    width: 100%;
   }
 }
 </style>

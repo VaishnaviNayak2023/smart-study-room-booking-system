@@ -102,6 +102,8 @@ async function ensureSchema() {
       amount VARCHAR(50) NOT NULL DEFAULT '0.00',
       start_time VARCHAR(50) NOT NULL DEFAULT '',
       end_time VARCHAR(50) NOT NULL DEFAULT '',
+      purpose VARCHAR(255) NOT NULL DEFAULT '',
+      notes TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
       FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE SET NULL
@@ -116,11 +118,45 @@ async function ensureSchema() {
       id INT AUTO_INCREMENT PRIMARY KEY,
       data JSON NOT NULL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )`
+    )`,
+    `CREATE TABLE IF NOT EXISTS notifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      type VARCHAR(50) NOT NULL DEFAULT 'system',
+      title VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      \`read\` TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id INT PRIMARY KEY,
+      theme VARCHAR(20) NOT NULL DEFAULT 'light',
+      language VARCHAR(50) NOT NULL DEFAULT 'en-US',
+      profile_visibility TINYINT(1) NOT NULL DEFAULT 1,
+      activity_status TINYINT(1) NOT NULL DEFAULT 0,
+      notification_prefs JSON NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`,
   ];
 
   for (const statement of statements) {
     await db.exec(statement);
+  }
+
+  await ensureColumn('bookings', 'purpose', "VARCHAR(255) NOT NULL DEFAULT ''");
+  await ensureColumn('bookings', 'notes', 'TEXT NULL');
+}
+
+async function ensureColumn(table, column, definition) {
+  const rows = await db.query(
+    `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column],
+  );
+  if (Number(rows[0]?.c || 0) === 0) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
 
@@ -151,6 +187,8 @@ export async function seedDatabase({ reset = false } = {}) {
   const hashValue = (value) => bcrypt.hashSync(String(value), 10);
 
   if (reset) {
+    await pool.execute('DELETE FROM notifications');
+    await pool.execute('DELETE FROM user_preferences');
     await pool.execute('DELETE FROM bookings');
     await pool.execute('DELETE FROM rooms');
     await pool.execute('DELETE FROM resources');
