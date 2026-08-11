@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "description": "REST API backend for the Booking Configuration system",
   "type": "module",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "test": "node --test test/**/*.test.js",
     "db:migrate": "node scripts/db-migrate.js",
+    "db:ensure-user": "node scripts/ensure-mysql-user.js",
     "db:seed": "node seed.js",
     "db:seed:reset": "node seed.js --reset"
   },

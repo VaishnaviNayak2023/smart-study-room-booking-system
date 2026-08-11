@@ -66,7 +66,7 @@ async function ensureSchema() {
       name VARCHAR(255) NOT NULL,
       icon VARCHAR(255) NOT NULL DEFAULT 'meeting_room',
       color VARCHAR(255) NOT NULL DEFAULT 'purple',
-      description TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS resources (
@@ -75,9 +75,9 @@ async function ensureSchema() {
       type VARCHAR(255) NOT NULL,
       capacity INT NOT NULL DEFAULT 1,
       location VARCHAR(255) NOT NULL DEFAULT '',
-      description TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL,
       available TINYINT(1) NOT NULL DEFAULT 1,
-      image TEXT NOT NULL DEFAULT '',
+      image VARCHAR(255) NOT NULL DEFAULT '',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS rooms (
@@ -85,7 +85,7 @@ async function ensureSchema() {
       name VARCHAR(255) NOT NULL,
       capacity INT NOT NULL DEFAULT 1,
       available TINYINT(1) NOT NULL DEFAULT 1,
-      image TEXT NOT NULL DEFAULT '',
+      image VARCHAR(255) NOT NULL DEFAULT '',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS bookings (
@@ -192,13 +192,39 @@ export async function ensureDatabaseReady() {
   return { seeded: false, inserted: 0, message: 'Database already has application data.' };
 }
 
+export async function checkDatabase() {
+  try {
+    const [rows] = await pool.query('SELECT 1 AS ok');
+    const ok = Array.isArray(rows) ? rows[0]?.ok === 1 : false;
+    return ok
+      ? { ok: true }
+      : { ok: false, message: 'Unexpected database probe response' };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error?.code || error?.message || 'Database unavailable',
+    };
+  }
+}
+
 export async function initializeDatabase() {
+  const connection = await pool.getConnection();
+  try {
+    await connection.ping();
+  } finally {
+    connection.release();
+  }
+
   await ensureSchema();
   return db;
 }
 
 export async function connectDatabase() {
   return db;
+}
+
+export async function closeDatabase() {
+  await pool.end();
 }
 
 export default db;
