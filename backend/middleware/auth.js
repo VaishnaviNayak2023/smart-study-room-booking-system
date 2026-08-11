@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import db from '../db.js';
+import env from '../config/env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key';
+const JWT_SECRET = env.JWT_SECRET;
 
 /* Verify the Bearer token and attach the requesting user to req.user */
 export async function authenticate(req, res, next) {

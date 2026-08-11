@@ -9,7 +9,7 @@
 
         <div>
           <div class="brand-title">
-            {{ isAdmin ? 'Admin Panel' : 'ResourceHub' }}
+            {{ isAdmin ? 'Admin Panel' : appName }}
           </div>
 
           <div class="brand-subtitle">
@@ -83,6 +83,7 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Notify } from 'quasar';
+import { appConfig } from '@/config/app';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
 // ───────────────────────────────────────────────
@@ -127,6 +128,7 @@ const drawerOpen = ref(true);
 */
 
 const isAdmin = computed(() => props.admin);
+const appName = computed(() => appConfig.appName || 'Booking Portal');
 
 const userNavigation: NavigationItem[] = [
   {

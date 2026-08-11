@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import env from './config/env.js';
 
 import './db.js';
 
@@ -16,15 +16,13 @@ import reportsRoutes from './routes/reports.js';
 
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:9000';
+const PORT = env.PORT;
+const CLIENT_ORIGINS = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : true;
 
 app.use(
   cors({
-    origin: CLIENT_ORIGIN.split(',').map((o) => o.trim()),
+    origin: CLIENT_ORIGINS,
     credentials: true,
   }),
 );
@@ -56,6 +54,6 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`✅ Booking Configuration backend running on http://localhost:${PORT}`);
+  console.log(`✅ ${env.APP_NAME} backend running on port ${PORT}`);
 });
 

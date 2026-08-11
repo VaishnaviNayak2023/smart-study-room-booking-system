@@ -150,9 +150,9 @@
              ================================================= -->
 
         <footer class="dashboard-footer">
-          <div class="footer-brand">Smart Study Room</div>
+          <div class="footer-brand">{{ appName || 'Booking Portal' }}</div>
 
-          <div class="copyright">© 2024 Smart Study Room. All rights reserved.</div>
+          <div class="copyright">© {{ currentYear }} {{ appName || 'Booking Portal' }}. All rights reserved.</div>
 
           <div class="footer-links">
             <span> Privacy Policy </span>
@@ -192,7 +192,7 @@
 
           <h2 class="summary-heading">
             Book
-            {{ selectedRoom?.name || 'Study Room A101' }}
+            {{ selectedRoom?.name || 'Selected Room' }}
           </h2>
 
           <!-- =================================================
@@ -338,6 +338,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
 import api from '@/services/api';
+import { appConfig } from '@/config/app';
 import { emitDashboardRefresh } from '@/stores/dashboard-events';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 
@@ -364,6 +365,8 @@ const router = useRouter();
 const studyroomStore = useStudyroomStore();
 
 const currentUser = computed(() => studyroomStore.currentUser);
+const appName = computed(() => appConfig.appName || 'Booking Portal');
+const currentYear = new Date().getFullYear();
 
 /* ==========================================================
    FILTERS

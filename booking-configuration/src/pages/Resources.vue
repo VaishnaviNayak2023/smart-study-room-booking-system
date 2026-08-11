@@ -128,6 +128,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useQuasar } from 'quasar';
+import api from '@/services/api';
 
 /* ==========================================================
    TYPES
@@ -162,94 +163,6 @@ const $q = useQuasar();
 /* ==========================================================
    STORAGE
    ========================================================== */
-
-const STORAGE_KEY = 'user-dashboard-resources';
-
-/* ==========================================================
-   DEFAULT RESOURCES
-   ========================================================== */
-
-const defaultResources: Resource[] = [
-  {
-    id: 1,
-
-    name: 'Study Room A101',
-
-    type: 'Study Room',
-
-    capacity: 6,
-
-    location: 'Building A, 1st Floor',
-
-    description: 'Quiet study room with tables and power outlets.',
-
-    active: true,
-  },
-
-  {
-    id: 2,
-
-    name: 'Study Room A102',
-
-    type: 'Study Room',
-
-    capacity: 4,
-
-    location: 'Building A, 1st Floor',
-
-    description: 'Small study room suitable for individual study.',
-
-    active: true,
-  },
-
-  {
-    id: 3,
-
-    name: 'Study Room A103',
-
-    type: 'Study Room',
-
-    capacity: 8,
-
-    location: 'Building A, 1st Floor',
-
-    description: 'Large study room suitable for groups.',
-
-    active: false,
-  },
-
-  {
-    id: 4,
-
-    name: 'Study Room B201',
-
-    type: 'Study Room',
-
-    capacity: 8,
-
-    location: 'Building B, 2nd Floor',
-
-    description: 'Spacious study room with natural lighting.',
-
-    active: true,
-  },
-
-  {
-    id: 5,
-
-    name: 'Meeting Room M1',
-
-    type: 'Meeting Room',
-
-    capacity: 10,
-
-    location: 'Main Building, 1st Floor',
-
-    description: 'Meeting room with presentation facilities.',
-
-    active: true,
-  },
-];
 
 /* ==========================================================
    TABLE COLUMNS
@@ -323,30 +236,14 @@ const resources = ref<Resource[]>([]);
    LOAD RESOURCES
    ========================================================== */
 
-const loadResources = () => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-
-  if (stored) {
-    try {
-      resources.value = JSON.parse(stored) as Resource[];
-
-      return;
-    } catch (error) {
-      console.error('Unable to load resources:', error);
-    }
+const loadResources = async () => {
+  try {
+    const { data } = await api.get<{ resources?: Resource[] }>('/resources');
+    resources.value = data.resources || [];
+  } catch (error) {
+    console.error('Unable to load resources:', error);
+    resources.value = [];
   }
-
-  resources.value = [...defaultResources];
-
-  saveResources();
-};
-
-/* ==========================================================
-   SAVE RESOURCES
-   ========================================================== */
-
-const saveResources = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(resources.value));
 };
 
 /* ==========================================================
@@ -390,16 +287,24 @@ const deleteResource = (resource: Resource) => {
       color: 'negative',
       unelevated: true,
     },
-  }).onOk(() => {
-    resources.value = resources.value.filter((item) => item.id !== resource.id);
+  }).onOk(async () => {
+    try {
+      await api.delete(`/resources/${resource.id}`);
+      resources.value = resources.value.filter((item) => item.id !== resource.id);
 
-    saveResources();
-
-    $q.notify({
-      type: 'positive',
-      message: 'Resource deleted successfully.',
-      position: 'top',
-    });
+      $q.notify({
+        type: 'positive',
+        message: 'Resource deleted successfully.',
+        position: 'top',
+      });
+    } catch (error) {
+      console.error('Delete resource failed:', error);
+      $q.notify({
+        type: 'negative',
+        message: 'Failed to delete the resource.',
+        position: 'top',
+      });
+    }
   });
 };
 
@@ -408,7 +313,7 @@ const deleteResource = (resource: Resource) => {
    ========================================================== */
 
 onMounted(() => {
-  loadResources();
+  void loadResources();
 });
 </script>
 

@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import env from './config/env.js';
 
-import './db.js';
+import { initializeDatabase } from './db.js';
 import authRoutes from './routes/auth.js';
 import resourceTypesRoutes from './routes/resourceTypes.js';
 import resourcesRoutes from './routes/resources.js';
@@ -15,15 +15,13 @@ import reportsRoutes from './routes/reports.js';
 
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:9000';
+const PORT = env.PORT;
+const CLIENT_ORIGINS = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : true;
 
 app.use(
   cors({
-    origin: CLIENT_ORIGIN.split(',').map((o) => o.trim()),
+    origin: CLIENT_ORIGINS,
     credentials: true,
   }),
 );
@@ -42,6 +40,30 @@ app.get('/api', (req, res) => {
   res.json({ message: 'Booking Configuration API is running.', status: 'ok' });
 });
 
+app.get('/health', async (req, res) => {
+  try {
+    const db = await import('./db.js');
+    await db.default.query('SELECT 1 AS ok');
+    res.json({ status: 'ok', database: 'connected' });
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      database: 'disconnected',
+      message: 'Backend is running but MySQL is unavailable.',
+    });
+  }
+});
+
+app.get('/health/db', async (req, res) => {
+  try {
+    const db = await import('./db.js');
+    const [row] = await db.default.query('SELECT 1 AS ok');
+    res.json({ status: 'ok', database: row?.ok === 1 ? 'connected' : 'unknown' });
+  } catch (error) {
+    res.status(503).json({ status: 'error', database: 'disconnected' });
+  }
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/resource-types', resourceTypesRoutes);
 app.use('/api/resources', resourcesRoutes);
@@ -55,6 +77,7 @@ app.use('/api/reports', reportsRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+await initializeDatabase();
 app.listen(PORT, () => {
-  console.log(`✅ Booking Configuration backend running on http://localhost:${PORT}`);
+  console.log(`✅ ${env.APP_NAME} backend running on port ${PORT}`);
 });

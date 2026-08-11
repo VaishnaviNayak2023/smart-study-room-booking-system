@@ -106,10 +106,10 @@ type SettingsData = {
 };
 
 const settings = reactive<SettingsData>({
-  systemName: 'ResourceHub',
-  currency: 'INR (₹)',
-  maxHours: '8',
-  advanceDays: '7',
+  systemName: '',
+  currency: '',
+  maxHours: '',
+  advanceDays: '',
   sameDay: true,
   autoConfirm: false,
   emailNotifications: true,

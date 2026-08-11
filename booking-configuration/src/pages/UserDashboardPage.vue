@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="dashboard-header">
       <div>
-        <h1 class="welcome-title">Welcome Back, Ananya.</h1>
+        <h1 class="welcome-title">Welcome{{ currentUserName ? `, ${currentUserName}` : '' }}.</h1>
         <p class="welcome-subtitle">Here's what's happening today.</p>
       </div>
 
@@ -175,6 +175,18 @@ import { useDashboardEvents } from '@/stores/dashboard-events';
 const router = useRouter();
 
 const search = ref('');
+
+const currentUserName = computed(() => {
+  const raw = localStorage.getItem('booking_user');
+  if (!raw) return '';
+
+  try {
+    const user = JSON.parse(raw);
+    return user?.name || '';
+  } catch {
+    return '';
+  }
+});
 
 type Stat = {
   label: string;

@@ -96,13 +96,15 @@ typescript: {
       // https: true,
       open: true, // opens browser window automatically
 
-      proxy: {
-        '/api': {
-          target: process.env.API_TARGET || 'http://localhost:5000',
-          changeOrigin: true,
-          // ws: true,
-        },
-      },
+      proxy: process.env.API_TARGET
+        ? {
+            '/api': {
+              target: process.env.API_TARGET,
+              changeOrigin: true,
+              // ws: true,
+            },
+          }
+        : undefined,
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework

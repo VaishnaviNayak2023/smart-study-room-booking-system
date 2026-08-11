@@ -1,0 +1,460 @@
+BOOKING CONFIGURATION - COMPLETE RUN GUIDE
+
+This project has 3 parts:
+1) MySQL database
+2) Backend API (Node.js + Express)
+3) Frontend app (Quasar + Vue + TypeScript)
+
+The required architecture is:
+Frontend -> Backend REST API -> MySQL
+
+IMPORTANT:
+- DO NOT hardcode app data or API URLs.
+- Use the .env file for all runtime configuration.
+- For Docker, use DB_HOST=mysql inside the backend container.
+- For local non-Docker runs, use DB_HOST=127.0.0.1 or localhost.
+
+------------------------------------------------------------
+1) PREREQUISITES
+------------------------------------------------------------
+Install the following:
+- Node.js 18+ (recommended 20+ or 22+)
+- npm
+- Docker Desktop or Docker Engine (if using Docker Compose)
+- MySQL client (optional, for direct DB access)
+
+Check versions:
+  node --version
+  npm --version
+  docker --version
+  docker compose version
+
+------------------------------------------------------------
+2) GET THE PROJECT READY
+------------------------------------------------------------
+From the project root:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration"
+
+Create environment file from the example:
+
+  copy .env.example .env
+
+Or in PowerShell:
+
+  Copy-Item .env.example .env
+
+Then open .env and make sure the values look like this:
+
+  NODE_ENV=development
+
+  MYSQL_DATABASE=booking_configuration
+  MYSQL_USER=booking_user
+  MYSQL_PASSWORD=change_me_strong_password
+  MYSQL_ROOT_PASSWORD=change_me_root_password
+  MYSQL_PORT=3306
+
+  PORT=5000
+  CLIENT_ORIGIN=http://localhost:9000
+  CORS_ORIGINS=http://localhost:9000
+  DB_HOST=mysql
+  DB_PORT=3306
+  DB_NAME=booking_configuration
+  DB_USER=booking_user
+  DB_PASSWORD=change_me_strong_password
+  JWT_SECRET=replace-with-a-long-random-secret
+  JWT_EXPIRES_IN=1h
+
+  SEED_ADMIN_NAME=System Administrator
+  SEED_ADMIN_EMAIL=admin@local.test
+  SEED_USER_EMAIL=user@local.test
+  SEED_ADMIN_PASSWORD=ChangeMe123!
+  SEED_USER_PASSWORD=ChangeMe123!
+
+  VITE_API_URL=http://localhost:5000
+  VITE_APP_NAME=Booking Configuration
+  VITE_DEFAULT_CURRENCY=
+  FRONTEND_PORT=9000
+
+If you are running the backend outside Docker on your machine, use:
+
+  DB_HOST=127.0.0.1
+
+If you are running inside Docker Compose, keep:
+
+  DB_HOST=mysql
+
+------------------------------------------------------------
+3) OPTION A: RUN THE FULL STACK WITH DOCKER (RECOMMENDED)
+------------------------------------------------------------
+From the project root:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration"
+  docker compose up --build
+
+This starts:
+- MySQL container
+- Backend API container
+- Frontend container
+
+Access URLs:
+- Frontend: http://localhost:9000
+- Backend: http://localhost:5000
+- Database: localhost:3306
+
+Check backend health:
+
+  curl http://localhost:5000/health
+
+Expected response:
+
+  { "status": "ok", "database": "connected" }
+
+Check DB status from inside the Docker network:
+
+  docker compose ps
+  docker compose logs -f mysql
+  docker compose logs -f backend
+
+Stop everything:
+
+  docker compose down
+
+Stop and remove database data volume:
+
+  docker compose down -v
+
+This deletes MySQL data.
+
+Rebuild after changes:
+
+  docker compose up --build
+
+Run DB migration manually if needed:
+
+  docker compose run --rm backend npm run db:migrate
+
+Run seed manually if needed:
+
+  docker compose run --rm backend npm run db:seed
+
+Reset seed data manually:
+
+  docker compose run --rm backend npm run db:seed:reset
+
+------------------------------------------------------------
+4) OPTION B: RUN BACKEND LOCALLY (WITHOUT DOCKER)
+------------------------------------------------------------
+1. Install backend dependencies:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\backend"
+  npm install
+
+2. Make sure MySQL is running locally.
+
+For a local MySQL install, create a database and user with values matching .env:
+
+  mysql -u root -p
+
+Inside MySQL:
+
+  CREATE DATABASE booking_configuration;
+  CREATE USER 'booking_user'@'localhost' IDENTIFIED BY 'change_me_strong_password';
+  GRANT ALL PRIVILEGES ON booking_configuration.* TO 'booking_user'@'localhost';
+  FLUSH PRIVILEGES;
+  EXIT;
+
+Then in .env set:
+
+  DB_HOST=127.0.0.1
+  DB_USER=booking_user
+  DB_PASSWORD=change_me_strong_password
+  DB_NAME=booking_configuration
+
+3. Create tables / migrate:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\backend"
+  node scripts/db-migrate.js
+
+4. Run seed data (optional but recommended for testing):
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\backend"
+  node seed.js
+
+5. Start backend:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\backend"
+  node server.js
+
+Or with auto-watch:
+
+  npm run dev
+
+Expected console output:
+
+  ✅ Booking Configuration backend running on port 5000
+
+Health check:
+
+  curl http://localhost:5000/health
+
+API base:
+
+  http://localhost:5000/api
+
+------------------------------------------------------------
+5) RUN FRONTEND LOCALLY (WITHOUT DOCKER)
+------------------------------------------------------------
+1. Install frontend dependencies:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\booking-configuration"
+  npm install
+
+2. Start frontend:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\booking-configuration"
+  npm run dev
+
+Or:
+
+  npx quasar dev
+
+Open this in the browser:
+
+  http://localhost:9000
+
+The frontend is configured to call the backend at:
+
+  VITE_API_URL=http://localhost:5000
+
+The app will use /api requests and the backend runs on port 5000.
+
+------------------------------------------------------------
+6) RUN BOTH TOGETHER (LOCAL DEVELOPMENT)
+------------------------------------------------------------
+Open 2 terminals.
+
+Terminal 1 - backend:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\backend"
+  npm install
+  node scripts/db-migrate.js
+  node seed.js
+  node server.js
+
+Terminal 2 - frontend:
+
+  cd "c:\Users\prash\Downloads\Booking Configuration\booking-configuration"
+  npm install
+  npm run dev
+
+Then open:
+
+  http://localhost:9000
+
+Backend API will be available at:
+
+  http://localhost:5000/api
+
+------------------------------------------------------------
+7) HOW TO ACCESS THE DATABASE
+------------------------------------------------------------
+A. Access MySQL from Docker container
+
+From project root:
+
+  docker compose exec mysql mysql -u${MYSQL_USER} -p${MYSQL_DATABASE}
+
+If your shell does not expand variables, use:
+
+  docker compose exec mysql mysql -u booking_user -p booking_configuration
+
+You will be prompted for password. Use the password from your .env file:
+
+  MYSQL_PASSWORD=change_me_strong_password
+
+Inside MySQL, check tables:
+
+  SHOW TABLES;
+  SELECT * FROM users;
+  SELECT * FROM bookings;
+  SELECT * FROM settings;
+
+Exit:
+
+  EXIT;
+
+B. Access MySQL locally on your machine
+
+Use MySQL CLI:
+
+  mysql -h 127.0.0.1 -P 3306 -u booking_user -p booking_configuration
+
+Then type the password.
+
+Check tables:
+
+  SHOW TABLES;
+  SELECT * FROM users;
+  SELECT * FROM bookings;
+
+C. Access with MySQL Workbench or DBeaver
+
+Use:
+- Host: localhost
+- Port: 3306
+- Username: booking_user
+- Password: change_me_strong_password
+- Database: booking_configuration
+
+------------------------------------------------------------
+8) CHECK THE APP IS WORKING
+------------------------------------------------------------
+Backend root:
+
+  http://localhost:5000/
+
+Backend API root:
+
+  http://localhost:5000/api
+
+Backend health:
+
+  http://localhost:5000/health
+
+Frontend:
+
+  http://localhost:9000
+
+If you want to test login from PowerShell:
+
+  $body = @{ email = 'admin@local.test'; password = 'ChangeMe123!' } | ConvertTo-Json
+  Invoke-RestMethod -Uri http://localhost:5000/api/auth/login -Method Post -ContentType 'application/json' -Body $body
+
+------------------------------------------------------------
+9) USEFUL COMMON COMMANDS
+------------------------------------------------------------
+Start full Docker stack:
+
+  docker compose up --build
+
+Stop Docker stack:
+
+  docker compose down
+
+Restart Docker stack:
+
+  docker compose restart
+
+View logs:
+
+  docker compose logs -f
+  docker compose logs -f backend
+  docker compose logs -f mysql
+  docker compose logs -f frontend
+
+Rebuild without cache:
+
+  docker compose build --no-cache
+
+Reset database volume:
+
+  docker compose down -v
+
+Backend local start:
+
+  cd backend
+  npm install
+  node scripts/db-migrate.js
+  node server.js
+
+Frontend local start:
+
+  cd booking-configuration
+  npm install
+  npm run dev
+
+------------------------------------------------------------
+10) TROUBLESHOOTING
+------------------------------------------------------------
+Problem: docker compose up fails because docker is not running
+Solution:
+- Start Docker Desktop
+- Or start the Docker service on your machine
+- Then run docker compose up --build again
+
+Problem: MySQL connection refused
+Solution:
+- Make sure MySQL is running
+- Check DB_HOST in .env
+- For Docker, use DB_HOST=mysql
+- For local run, use DB_HOST=127.0.0.1
+
+Problem: backend cannot connect to MySQL inside Docker
+Solution:
+- DO NOT use localhost inside the backend container
+- Use mysql as host name in Docker Compose
+
+Problem: frontend cannot reach backend
+Solution:
+- Confirm backend is running on port 5000
+- Confirm VITE_API_URL=http://localhost:5000 in .env
+- Confirm the browser is reaching localhost:9000 and the frontend is not pointing at a stale URL
+
+Problem: database is empty
+Solution:
+- Run migrations:
+
+    cd backend
+    node scripts/db-migrate.js
+
+- Run seed:
+
+    cd backend
+    node seed.js
+
+Problem: password rejected during login
+Solution:
+- Check the seeded credentials in .env
+- Default seeded admin login values are:
+
+    email: admin@local.test
+    password: ChangeMe123!
+
+------------------------------------------------------------
+11) QUICK START (FASTEST WAY)
+------------------------------------------------------------
+If you want the shortest path:
+
+1. Create .env from .env.example
+2. Ensure Docker is running
+3. Start the stack:
+
+   cd "c:\Users\prash\Downloads\Booking Configuration"
+   docker compose up --build
+
+4. Open:
+
+   http://localhost:9000
+
+5. If you want database access:
+
+   docker compose exec mysql mysql -u booking_user -p booking_configuration
+
+6. To stop:
+
+   docker compose down
+
+------------------------------------------------------------
+12) IMPORTANT NOTES
+------------------------------------------------------------
+- The project now uses MySQL only.
+- The frontend uses environment-based API configuration.
+- The backend loads configuration from .env.
+- The .env file should not be committed to source control.
+- Secrets like JWT_SECRET and MySQL passwords must stay in .env.
+- Local development and Docker both work, but the host values must be different:
+  - Docker backend uses DB_HOST=mysql
+  - Local backend uses DB_HOST=127.0.0.1
+
+This is everything you need to run the project, access the database, and troubleshoot the common startup issues.

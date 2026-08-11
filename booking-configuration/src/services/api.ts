@@ -1,14 +1,15 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/config/app';
+
+const API_BASE = getApiBaseUrl();
 
 /**
  * Centralized axios instance for the Booking Configuration frontend.
  *
- * - Uses a relative `/api` base so it works through the Quasar dev proxy.
+ * - Uses a config-driven API base, defaulting to a relative `/api` path for local dev/proxy use.
  * - Attaches the JWT from localStorage on every request (when present).
  * - On 401 responses, clears the stale token and redirects to /login.
  */
-
-export const API_BASE = '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -17,6 +18,7 @@ const api = axios.create({
   },
 });
 
+export { API_BASE };
 export const TOKEN_KEY = 'booking_token';
 export const USER_KEY = 'booking_user';
 
