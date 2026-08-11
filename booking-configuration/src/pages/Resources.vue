@@ -287,7 +287,12 @@ const deleteResource = (resource: Resource) => {
       color: 'negative',
       unelevated: true,
     },
-  }).onOk(async () => {
+  }).onOk(() => {
+    void removeResource(resource);
+  });
+};
+
+const removeResource = async (resource: Resource) => {
     try {
       await api.delete(`/resources/${resource.id}`);
       resources.value = resources.value.filter((item) => item.id !== resource.id);
@@ -305,7 +310,6 @@ const deleteResource = (resource: Resource) => {
         position: 'top',
       });
     }
-  });
 };
 
 /* ==========================================================

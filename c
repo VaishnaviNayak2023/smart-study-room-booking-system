@@ -1,4 +1,4 @@
-const base = 'http://localhost:5000/api/auth';
+const base = 'http://localhost:5006/api/auth';
 
 async function post(path, body) {
   const res = await fetch(base + path, {

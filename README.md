@@ -46,7 +46,7 @@ docker compose up --build
 
 Create a `.env` file from `.env.example`. The project uses environment variables instead of hardcoded settings.
 
-Use `DB_HOST=mysql` when the backend runs inside Docker. Do not use `localhost` for backend-to-MySQL communication inside Docker, because `localhost` inside the backend container refers to the backend container itself, not the MySQL container.
+Use `DB_HOST=localhost` for local non-Docker backend runs. Docker Compose supplies `DOCKER_DB_HOST` (defaulting to its `mysql` service) to the backend container, because `localhost` inside that container refers to the backend container itself.
 
 For local non-Docker backend runs, you can set `DB_HOST=localhost` instead.
 
@@ -64,7 +64,7 @@ MYSQL_PORT=3306
 PORT=5000
 CLIENT_ORIGIN=http://localhost:9000
 CORS_ORIGINS=http://localhost:9000
-DB_HOST=mysql
+DB_HOST=localhost
 DB_PORT=3306
 DB_NAME=booking_configuration
 DB_USER=booking_user
