@@ -4,9 +4,18 @@
     <div v-else-if="error" class="portal-error">
       <q-icon name="error_outline" size="32px" color="negative" />
       <div>{{ error }}</div>
-      <q-btn unelevated no-caps color="primary" label="Retry" @click="loadDashboard" />
+      <q-btn unelevated no-caps color="primary" label="Retry" @click="() => loadDashboard()" />
     </div>
     <template v-else>
+      <q-banner v-if="pricingWarnings.length" class="bg-warning text-dark q-mb-md" rounded dense>
+        <div class="text-subtitle2 q-mb-xs">Pricing configuration warnings</div>
+        <ul class="q-ma-none q-pl-md">
+          <li v-for="(warning, index) in pricingWarnings" :key="index">{{ warning }}</li>
+        </ul>
+        <template #action>
+          <q-btn flat no-caps color="primary" label="Open Pricing" @click="goPricing" />
+        </template>
+      </q-banner>
       <div class="page-header">
         <div>
           <h1>System Overview</h1>
@@ -131,6 +140,56 @@ const stats = ref<DashboardStats>({
   confirmedBookings: 0,
 });
 const bookings = ref<BookingRow[]>([]);
+const pricingWarnings = ref<string[]>([]);
+let loadSeq = 0;
+
+const defaultStats = (): DashboardStats => ({
+  totalResources: 0,
+  availableResources: 0,
+  totalBookings: 0,
+  todaysBookings: 0,
+  totalUsers: 0,
+  pendingBookings: 0,
+  confirmedBookings: 0,
+});
+
+function apiErrorMessage(err: unknown, fallback: string) {
+  const ax = err as { response?: { data?: { message?: string } } };
+  return ax.response?.data?.message || fallback;
+}
+
+async function loadPricingWarnings(seq: number) {
+  try {
+    const [pricingRes, metaRes, typesRes] = await Promise.all([
+      api.get<{ pricing: Record<string, { baseRate?: number; hourlyRate?: number }> }>('/pricing-rules/general'),
+      api.get<{ contexts: Array<{ label: string; value: string }> }>('/pricing-rules/meta'),
+      api.get<{ resourceTypes: Array<{ id: number; name: string }> }>('/resource-types'),
+    ]);
+    if (seq !== loadSeq) return;
+
+    const warnings: string[] = [];
+    const pricingMap = pricingRes.data.pricing || {};
+    const general = pricingMap.general || {};
+    const contexts = metaRes.data.contexts || [];
+    const types = typesRes.data.resourceTypes || [];
+    const hasContextRate = contexts.some(
+      (ctx) => ctx.value !== 'general' && Number(pricingMap[ctx.value]?.hourlyRate) > 0,
+    );
+    if (Number(general.baseRate) <= 0 && !hasContextRate) {
+      warnings.push('General base rate is zero and no booking system hourly rate is configured.');
+    }
+    for (const type of types) {
+      const slug = type.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      if (!pricingMap[slug] && !contexts.some((ctx) => ctx.value === slug)) {
+        warnings.push(`No pricing configuration found for resource type "${type.name}".`);
+      }
+    }
+    pricingWarnings.value = warnings;
+  } catch {
+    if (seq !== loadSeq) return;
+    pricingWarnings.value = [];
+  }
+}
 
 const statCards = computed(() => [
   { label: 'Total Resources', value: stats.value.totalResources, icon: 'inventory_2', sub: `${stats.value.availableResources} available`, positive: true },
@@ -154,26 +213,44 @@ function statusClass(status: string) {
   return 'is-completed';
 }
 
-async function loadDashboard() {
-  loading.value = true;
-  error.value = '';
+async function loadDashboard(options: { silent?: boolean } = {}) {
+  const { silent = false } = options;
+  const seq = ++loadSeq;
+
+  if (!silent) {
+    loading.value = true;
+    error.value = '';
+    pricingWarnings.value = [];
+  }
+
   try {
     const { data } = await api.get<{ stats: DashboardStats; bookings: BookingRow[] }>('/dashboard');
-    stats.value = data.stats;
+    if (seq !== loadSeq) return;
+
+    stats.value = { ...defaultStats(), ...(data.stats || {}) };
     bookings.value = data.bookings || [];
-  } catch {
-    error.value = 'Unable to load admin dashboard.';
+    void loadPricingWarnings(seq);
+  } catch (err) {
+    if (seq !== loadSeq) return;
+    if (!silent || stats.value.totalBookings === 0) {
+      error.value = apiErrorMessage(err, 'Unable to load admin dashboard.');
+    }
   } finally {
-    loading.value = false;
+    if (seq === loadSeq && !silent) {
+      loading.value = false;
+    }
   }
 }
 
 function goBookings() { void router.push('/bookings'); }
+function goPricing() { void router.push('/pricing-rules'); }
 
 let stopWatcher: (() => void) | undefined;
 onMounted(() => {
   void loadDashboard();
-  stopWatcher = watch(() => dashboardEvents.version, () => { void loadDashboard(); });
+  stopWatcher = watch(() => dashboardEvents.version, () => {
+    void loadDashboard({ silent: true });
+  });
 });
 onUnmounted(() => { stopWatcher?.(); });
 </script>
@@ -181,34 +258,34 @@ onUnmounted(() => { stopWatcher?.(); });
 <style scoped>
 .page-header { margin-bottom: 22px; }
 .page-header h1 { margin: 0; font-size: clamp(26px, 3vw, 32px); font-weight: 750; }
-.page-header p { margin: 6px 0 0; color: #64748b; }
+.page-header p { margin: 6px 0 0; color: var(--portal-muted); }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
-.stat-card { border-radius: 14px; border-color: #e5e7eb; }
+.stat-card { border-radius: 14px; border-color: var(--portal-border); }
 .stat-top { display: flex; justify-content: space-between; align-items: flex-start; }
-.stat-label { color: #64748b; font-size: 12px; font-weight: 600; }
-.stat-icon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: #eef2ff; color: #1e3a8a; }
+.stat-label { color: var(--portal-muted); font-size: 12px; font-weight: 600; }
+.stat-icon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--portal-primary-soft); color: var(--portal-primary); }
 .stat-value { margin-top: 14px; font-size: 28px; font-weight: 700; }
-.stat-sub { margin-top: 6px; font-size: 12px; color: #64748b; }
-.stat-sub.positive { color: #16a34a; }
+.stat-sub { margin-top: 6px; font-size: 12px; color: var(--portal-muted); }
+.stat-sub.positive { color: var(--portal-success); }
 .main-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr); gap: 16px; }
-.panel-card { border-radius: 14px; border-color: #e5e7eb; }
+.panel-card { border-radius: 14px; border-color: var(--portal-border); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .panel-title { font-size: 16px; font-weight: 700; }
-.panel-sub { margin: 4px 0 16px; color: #64748b; font-size: 13px; }
+.panel-sub { margin: 4px 0 16px; color: var(--portal-muted); font-size: 13px; }
 .activity-list, .queue-list { display: flex; flex-direction: column; gap: 12px; }
 .activity-row, .queue-item { display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
-.activity-icon, .queue-avatar { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: #eef2ff; color: #1e3a8a; font-weight: 700; }
-.queue-avatar.confirmed { background: #dcfce7; color: #15803d; }
+.activity-icon, .queue-avatar { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--portal-primary-soft); color: var(--portal-primary); font-weight: 700; }
+.queue-avatar.confirmed { background: var(--portal-status-confirmed-bg); color: var(--portal-status-confirmed-text); }
 .queue-avatar.users { background: #ede9fe; color: #6d28d9; }
 .activity-title, .queue-title { font-weight: 600; font-size: 14px; }
-.activity-sub, .queue-sub { color: #64748b; font-size: 12px; margin-top: 2px; }
-.activity-meta { text-align: right; font-size: 12px; color: #64748b; }
+.activity-sub, .queue-sub { color: var(--portal-muted); font-size: 12px; margin-top: 2px; }
+.activity-meta { text-align: right; font-size: 12px; color: var(--portal-muted); }
 .activity-meta .time { margin-top: 2px; }
 .status-chip, .queue-badge { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.status-chip.is-confirmed, .queue-badge.active { background: #dcfce7; color: #15803d; }
-.status-chip.is-pending, .queue-badge.pending { background: #e0e7ff; color: #3730a3; }
-.status-chip.is-cancelled { background: #fee2e2; color: #b91c1c; }
-.status-chip.is-completed { background: #f1f5f9; color: #475569; }
+.status-chip.is-confirmed, .queue-badge.active { background: var(--portal-status-confirmed-bg); color: var(--portal-status-confirmed-text); }
+.status-chip.is-pending, .queue-badge.pending { background: var(--portal-status-pending-bg); color: var(--portal-status-pending-text); }
+.status-chip.is-cancelled { background: #fee2e2; color: var(--portal-status-unavailable-text); }
+.status-chip.is-completed { background: var(--portal-summary-bg); color: var(--portal-text-secondary); }
 .portal-empty.compact { min-height: 120px; }
 @media (max-width: 1000px) { .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .main-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .stats-grid { grid-template-columns: 1fr; } .activity-row { grid-template-columns: 1fr; } }

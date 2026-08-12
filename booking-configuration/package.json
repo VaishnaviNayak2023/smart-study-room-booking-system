@@ -11,12 +11,15 @@
     "lint:check": "prettier \"**/*.{js,ts,vue,css,scss,html,md,json}\" --ignore-path .gitignore && eslint -c ./eslint.config.js \"./src*/**/*.{ts,js,cjs,mjs,vue}\"",
     "dev": "quasar dev",
     "build": "quasar build",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.playwright.json",
+    "test:e2e": "playwright test",
     "postinstall": "quasar prepare --silent"
   },
   "dependencies": {
     "@quasar/extras": "^2.0.0",
     "axios": "^1.19.0",
+    "jspdf": "^4.2.1",
     "pinia": "^4.0.2",
     "quasar": "^2.24.0",
     "vue": "^3.5.22",
@@ -24,6 +27,7 @@
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@eslint/js": "^10.0.1",
     "@intlify/unplugin-vue-i18n": "^11.0.0",
     "@quasar/app-vite": "^3.4.1",

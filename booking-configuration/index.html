@@ -19,6 +19,17 @@
     <link rel="icon" type="image/ico" href="favicon.ico" />
   </head>
   <body>
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem('booking_theme_preference') || 'auto';
+          if (pref === 'system') pref = 'auto';
+          var dark = pref === 'dark' || (pref === 'auto' && new Date().getHours() >= 18);
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+          if (dark) document.body.classList.add('body--dark');
+        } catch (e) {}
+      })();
+    </script>
     <!-- quasar:entry-point -->
   </body>
 </html>

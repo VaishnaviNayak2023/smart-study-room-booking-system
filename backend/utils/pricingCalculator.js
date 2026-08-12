@@ -1,4 +1,5 @@
 import db from '../db.js';
+import { DEFAULT_CURRENCY, currencySymbol, getSettingsCurrencyCode } from './currency.js';
 
 /** mysql2 may return JSON columns as objects; older rows may still be strings. */
 function parseJsonColumn(value) {
@@ -36,8 +37,23 @@ export async function loadMergedPricing(resourceType = '') {
 
   if (slug && slug !== 'general') {
     specific = await loadContextData(slug);
+    if (!Object.keys(specific).length && slug === 'study-room') {
+      specific = await loadContextData('study');
+    }
   }
 
+  const hourlyRate =
+    Number(specific.hourlyRate) ||
+    Number(general.baseRate) ||
+    Number(general.hourlyRate) ||
+    0;
+
+  const settingsCurrency = await getSettingsCurrencyCode(db);
+  return mergePricingConfigs(general, { ...specific, hourlyRate }, settingsCurrency);
+}
+
+/** Merge in-memory general + context payloads (for admin simulation preview). */
+export function mergePricingConfigs(general = {}, specific = {}, settingsCurrency = DEFAULT_CURRENCY) {
   const hourlyRate =
     Number(specific.hourlyRate) ||
     Number(general.baseRate) ||
@@ -48,7 +64,7 @@ export async function loadMergedPricing(resourceType = '') {
     ...general,
     ...specific,
     hourlyRate,
-    currency: specific.currency || general.currency || 'USD',
+    currency: specific.currency || general.currency || settingsCurrency,
     freeFirstHour: specific.freeFirstHour ?? general.freeFirstHour ?? false,
     applyTax: general.applyTax ?? true,
     taxRate: Number(general.taxRate ?? general.gstRate ?? 0),
@@ -64,6 +80,7 @@ export async function loadMergedPricing(resourceType = '') {
     peakMultiplier: Number(specific.peakMultiplier ?? general.peakMultiplier ?? 1),
     studentDiscount: Number(specific.studentDiscount ?? general.studentDiscount ?? 0),
     roleDiscounts: Array.isArray(specific.roleDiscounts) ? specific.roleDiscounts : [],
+    minimumDuration: specific.minimumDuration || general.minimumDuration || '',
   };
 }
 
@@ -79,6 +96,17 @@ function durationHoursFromTimes(startTime, endTime) {
   if (start === null || end === null || end <= start) return 0;
   return (end - start) / 60;
 }
+
+export function parseMinimumDurationHours(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+  const text = String(value).trim().toLowerCase();
+  const match = text.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  return Math.max(0, Number(match[1]));
+}
+
+export { durationHoursFromTimes };
 
 function isWeekend(dateStr) {
   const day = new Date(`${dateStr}T12:00:00`).getDay();
@@ -99,11 +127,52 @@ function isPeakWindow(pricing, date, startTime) {
   return start >= peakStart && start < peakEnd;
 }
 
+function isDiscountRule(rule) {
+  if (rule.direction === 'discount') return true;
+  if (rule.direction === 'surcharge') return false;
+  return String(rule.modifier || '').trim().startsWith('-');
+}
+
+function ruleMatchesCondition(rule, { date, hours }) {
+  const type = rule.conditionType || 'custom';
+
+  switch (type) {
+    case 'day_of_week': {
+      const days = String(rule.peakDays || rule.condition || '').toLowerCase();
+      const weekend = isWeekend(date);
+      if (days.includes('weekend')) return weekend;
+      if (days.includes('mon') && days.includes('fri')) return !weekend;
+      if (days.includes('every')) return true;
+      return true;
+    }
+    case 'date_range': {
+      if (!rule.startDate || !rule.endDate || !date) return false;
+      return date >= rule.startDate && date <= rule.endDate;
+    }
+    case 'duration': {
+      const min = Number(rule.minDurationHours ?? 0);
+      return hours >= min;
+    }
+    case 'advance': {
+      if (!date) return false;
+      const bookingDate = new Date(`${date}T00:00:00`);
+      const now = new Date();
+      const diffDays = (bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays >= Number(rule.advanceDays ?? 0);
+    }
+    case 'custom':
+    default:
+      return true;
+  }
+}
+
 function applyModifier(base, rule) {
   let value = Number(rule.value ?? rule.modifierValue);
   if (!Number.isFinite(value)) {
     const match = String(rule.modifier || '').match(/(-?\d+(?:\.\d+)?)\s*%/);
-    value = match ? Number(match[1]) : 0;
+    value = match ? Math.abs(Number(match[1])) : 0;
+  } else {
+    value = Math.abs(value);
   }
 
   const modifierText = String(rule.modifier || '').toLowerCase();
@@ -111,20 +180,21 @@ function applyModifier(base, rule) {
     rule.modifierType?.includes('percent') ||
     modifierText.includes('%') ||
     rule.type === 'percentage';
+  const sign = isDiscountRule(rule) ? -1 : 1;
 
   if (isPercent) {
-    const amount = base * (value / 100);
+    const amount = sign * base * (value / 100);
     return {
       amount,
       label: rule.name || 'Modifier',
-      calculation: `${value}% of base`,
+      calculation: `${isDiscountRule(rule) ? '-' : '+'}${value}% of base`,
     };
   }
 
   return {
-    amount: value,
+    amount: sign * value,
     label: rule.name || 'Modifier',
-    calculation: 'Flat fee',
+    calculation: isDiscountRule(rule) ? 'Flat discount' : 'Flat fee',
   };
 }
 
@@ -145,11 +215,12 @@ export function calculateBookingPrice({
   const hourlyRate = Number(pricing.hourlyRate) || 0;
   const billableHours = Math.max(hours - (pricing.freeFirstHour ? 1 : 0), 0);
   let base = billableHours * hourlyRate;
+  const rateSymbol = currencySymbol(pricing.currency || DEFAULT_CURRENCY);
 
   const lineItems = [
     {
       description: 'Base Rate',
-      calculation: `${billableHours} hrs @ $${hourlyRate.toFixed(2)}/hr`,
+      calculation: `${billableHours} hrs @ ${rateSymbol}${hourlyRate.toFixed(2)}/hr`,
       amount: base,
       type: 'base',
     },
@@ -168,6 +239,7 @@ export function calculateBookingPrice({
 
   const activeRules = (pricing.rules || []).filter((rule) => rule.active !== false);
   for (const rule of activeRules) {
+    if (!ruleMatchesCondition(rule, { date, hours })) continue;
     const mod = applyModifier(base, rule);
     if (mod.amount !== 0) {
       base += mod.amount;
@@ -244,7 +316,7 @@ export function calculateBookingPrice({
     taxRate,
     total,
     amount: total.toFixed(2),
-    currency: pricing.currency || 'USD',
+    currency: pricing.currency || DEFAULT_CURRENCY,
   };
 }
 

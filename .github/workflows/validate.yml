@@ -1,0 +1,174 @@
+name: Validate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: booking_configuration
+          MYSQL_USER: booking_user
+          MYSQL_PASSWORD: change_me_strong_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: development
+      PORT: 5006
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: booking_configuration
+      DB_USER: booking_user
+      DB_PASSWORD: change_me_strong_password
+      JWT_SECRET: ci-test-secret-key-minimum-length
+      JWT_EXPIRES_IN: 1h
+      SEED_ADMIN_EMAIL: admin@ci.test
+      SEED_USER_EMAIL: user@ci.test
+      SEED_ADMIN_PASSWORD: ChangeMe123!
+      SEED_USER_PASSWORD: ChangeMe123!
+      SEED_DEMO_DATA: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Seed database
+        working-directory: backend
+        run: node seed.js
+
+      - name: Start backend
+        working-directory: backend
+        run: node server.js &
+
+      - name: Wait for backend
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:5006/api && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Run API validation
+        working-directory: backend
+        run: node scripts/validate-flows.js
+
+      - name: Install frontend dependencies
+        working-directory: booking-configuration
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: booking-configuration
+        run: npm run typecheck
+
+      - name: Lint frontend
+        working-directory: booking-configuration
+        run: npm run lint:check
+
+  e2e-playwright:
+    runs-on: ubuntu-latest
+    needs: validate
+    continue-on-error: true
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: booking_configuration
+          MYSQL_USER: booking_user
+          MYSQL_PASSWORD: change_me_strong_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: development
+      PORT: 5006
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: booking_configuration
+      DB_USER: booking_user
+      DB_PASSWORD: change_me_strong_password
+      JWT_SECRET: ci-test-secret-key-minimum-length
+      JWT_EXPIRES_IN: 1h
+      SEED_ADMIN_EMAIL: admin@ci.test
+      SEED_USER_EMAIL: user@ci.test
+      SEED_ADMIN_PASSWORD: ChangeMe123!
+      SEED_USER_PASSWORD: ChangeMe123!
+      SEED_DEMO_DATA: 'true'
+      PLAYWRIGHT_BASE_URL: http://localhost:9000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Seed database
+        working-directory: backend
+        run: node seed.js
+
+      - name: Start backend
+        working-directory: backend
+        run: node server.js &
+
+      - name: Wait for backend
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:5006/api && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Install frontend dependencies
+        working-directory: booking-configuration
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: booking-configuration
+        run: npx playwright install chromium --with-deps
+
+      - name: Build and serve frontend
+        working-directory: booking-configuration
+        run: |
+          npm run build
+          npx --yes serve dist/spa -l 9000 &
+
+      - name: Wait for frontend
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:9000 && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Run Playwright E2E
+        working-directory: booking-configuration
+        run: npm run test:e2e

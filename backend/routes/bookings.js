@@ -6,6 +6,13 @@ import {
   bookingConflictsWithWindow,
   computeResourceAvailability,
 } from '../utils/resourceAvailability.js';
+import {
+  calculateBookingPriceForResource,
+  loadMergedPricing,
+  durationHoursFromTimes,
+  parseMinimumDurationHours,
+} from '../utils/pricingCalculator.js';
+import { getSettingsCurrencyCode } from '../utils/currency.js';
 
 const router = Router();
 
@@ -31,9 +38,10 @@ const rowToBooking = (r) => {
   return {
     id: r.booking_code || `BK${r.id}`,
     userId: r.user_id,
-    user: r.user_name,
+    user: r.user_name || r.account_name || '',
     userEmail: r.user_email || '',
     userPhone: r.user_phone || '',
+    userPhoneCountryCode: r.user_phone_country_code || '',
     resourceId: r.resource_id,
     resource: r.resource,
     date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date || '').slice(0, 10),
@@ -45,6 +53,7 @@ const rowToBooking = (r) => {
     endTime: r.end_time,
     purpose: r.purpose || '',
     notes: r.notes || '',
+    pricingSnapshot: parsePricingSnapshot(r.pricing_snapshot),
     location: r.location || '',
     capacity: r.capacity ?? null,
     image: r.image || '',
@@ -60,12 +69,63 @@ const rowToBooking = (r) => {
   };
 };
 
+function parsePricingSnapshot(value) {
+  if (!value) return null;
+  let parsed = null;
+  if (typeof value === 'object') parsed = value;
+  else if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (!Array.isArray(parsed.lineItems) || parsed.total === undefined) return null;
+  return parsed;
+}
+
+function parseStoredAmount(value) {
+  const n = parseFloat(String(value || '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Legacy bookings without a snapshot — use amount recorded at booking time. */
+async function breakdownFromStoredBooking(row) {
+  const total = parseStoredAmount(row.amount);
+  if (total === null) return null;
+  const currency = await getSettingsCurrencyCode(db);
+  const amountText = String(row.amount || '').trim() || total.toFixed(2);
+  return {
+    lineItems: [
+      {
+        description: 'Booking Total',
+        calculation: 'Amount recorded at booking time',
+        amount: total,
+        type: 'base',
+      },
+    ],
+    subtotal: total,
+    tax: 0,
+    taxRate: 0,
+    total,
+    amount: amountText,
+    currency,
+  };
+}
+
 const bookingSelect = `
   SELECT b.*,
          r.location AS location,
          r.capacity AS capacity,
          r.image AS image,
-         u.email AS user_email
+         r.type AS resource_type,
+         b.pricing_snapshot AS pricing_snapshot,
+         u.email AS user_email,
+         u.phone AS user_phone,
+         u.phone_country_code AS user_phone_country_code,
+         u.role AS user_role,
+         u.name AS account_name
   FROM bookings b
   LEFT JOIN resources r ON r.id = b.resource_id
   LEFT JOIN users u ON u.id = b.user_id
@@ -75,6 +135,45 @@ async function getSettings() {
   const row = await db.prepare('SELECT data FROM settings WHERE id = 1').get();
   if (!row?.data) return {};
   return typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+}
+
+async function getOrganizationName() {
+  const settings = await getSettings();
+  return String(settings.systemName || '').trim();
+}
+
+function parseAddOnIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function assertMinimumDuration({ resourceType, startTime, endTime }) {
+  const pricing = await loadMergedPricing(resourceType);
+  const minimumHours = parseMinimumDurationHours(pricing.minimumDuration);
+  if (minimumHours <= 0) return { ok: true };
+  const hours = durationHoursFromTimes(startTime, endTime);
+  if (hours < minimumHours) {
+    return {
+      ok: false,
+      status: 400,
+      message: `Booking duration must be at least ${minimumHours} hour(s).`,
+    };
+  }
+  return { ok: true };
+}
+
+function canAccessBooking(row, user) {
+  if (!row || !user) return false;
+  return user.role === 'admin' || row.user_id === user.id;
 }
 
 async function assertResourceBookable({ resourceId, resourceName, date, startTime, endTime, excludeBookingId = null }) {
@@ -385,15 +484,56 @@ router.get('/', authenticate, async (req, res) => {
   });
 });
 
+/* GET /api/bookings/:code/receipt — receipt data for PDF (owner or admin) */
+router.get('/:code/receipt', authenticate, async (req, res) => {
+  const row = await db.prepare(`${bookingSelect} WHERE b.booking_code = ?`).get(req.params.code);
+  if (!row || !canAccessBooking(row, req.user)) {
+    return res.status(404).json({ message: 'Booking not found.' });
+  }
+
+  const snapshot = parsePricingSnapshot(row.pricing_snapshot);
+  let breakdown = snapshot;
+  if (!breakdown) {
+    breakdown = await breakdownFromStoredBooking(row);
+  }
+  if (!breakdown) {
+    breakdown = await calculateBookingPriceForResource({
+      resourceType: row.resource_type,
+      resourceId: row.resource_id,
+      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date || '').slice(0, 10),
+      startTime: row.start_time,
+      endTime: row.end_time,
+      addOnIds: parseAddOnIds(row.add_on_ids),
+      userRole: row.user_role || 'user',
+    });
+  }
+
+  const storedTotal = parseStoredAmount(row.amount);
+  if (storedTotal !== null && breakdown && Number(breakdown.total) !== storedTotal) {
+    breakdown = {
+      ...breakdown,
+      total: storedTotal,
+      amount: String(row.amount || storedTotal.toFixed(2)),
+    };
+  }
+
+  const organizationName = await getOrganizationName();
+  const receipt = {
+    receiptId: `RCT-${row.booking_code || row.id}`,
+    issuedAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    organizationName,
+    booking: rowToBooking(row),
+    breakdown,
+  };
+
+  return res.json({ receipt });
+});
+
 /* GET /api/bookings/:code — single booking (admin or owner) */
 router.get('/:code', authenticate, async (req, res) => {
   const row = await db.prepare(`${bookingSelect} WHERE b.booking_code = ?`).get(req.params.code);
-  if (!row) return res.status(404).json({ message: 'Booking not found.' });
-
-  const isAdmin = req.user.role === 'admin';
-  const isOwner = row.user_id === req.user.id;
-  if (!isAdmin && !isOwner) {
-    return res.status(403).json({ message: 'You do not have permission to view this booking.' });
+  if (!row || !canAccessBooking(row, req.user)) {
+    return res.status(404).json({ message: 'Booking not found.' });
   }
 
   return res.json({ booking: rowToBooking(row) });
@@ -408,7 +548,8 @@ router.post('/', authenticate, async (req, res) => {
     time,
     startTime = time,
     endTime,
-    amount = '0.00',
+    amount: clientAmount = '0.00',
+    addOnIds = [],
     purpose = '',
     notes = '',
   } = req.body || {};
@@ -429,11 +570,34 @@ router.post('/', authenticate, async (req, res) => {
   }
   const resolvedResourceId = resourceId || bookable.resourceRow?.id || null;
 
+  const durationCheck = await assertMinimumDuration({
+    resourceType: bookable.resourceRow?.type,
+    startTime,
+    endTime,
+  });
+  if (!durationCheck.ok) {
+    return res.status(durationCheck.status).json({ message: durationCheck.message });
+  }
+
+  const normalizedAddOnIds = Array.isArray(addOnIds) ? addOnIds.map(String) : [];
+
   const settings = await getSettings();
   const autoConfirm = !!settings.autoConfirm;
   const status = req.user.role === 'admin' || autoConfirm ? 'Confirmed' : 'Pending';
 
   const user = await db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(req.user.id);
+
+  const pricingBreakdown = await calculateBookingPriceForResource({
+    resourceType: bookable.resourceRow?.type,
+    resourceId: resolvedResourceId,
+    date,
+    startTime,
+    endTime,
+    addOnIds: normalizedAddOnIds,
+    userRole: user.role,
+  });
+
+  const amount = pricingBreakdown.amount;
   const lastCode = await db.prepare('SELECT booking_code FROM bookings ORDER BY id DESC LIMIT 1').get();
   const lastNum = lastCode ? parseInt(String(lastCode.booking_code).replace(/\D/g, ''), 10) || 1000 : 1000;
   const code = `BK${lastNum + 1}`;
@@ -444,8 +608,8 @@ router.post('/', authenticate, async (req, res) => {
     .prepare(
       `INSERT INTO bookings
         (booking_code, user_id, user_name, resource_id, resource, date, time, datetime_label,
-         status, amount, start_time, end_time, purpose, notes, status_updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+         status, amount, start_time, end_time, purpose, notes, pricing_snapshot, add_on_ids, status_updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
     )
     .run(
       code,
@@ -462,13 +626,15 @@ router.post('/', authenticate, async (req, res) => {
       endTime,
       purpose || '',
       notes || '',
+      JSON.stringify(pricingBreakdown),
+      JSON.stringify(normalizedAddOnIds),
     );
 
   const row = await db.prepare(`${bookingSelect} WHERE b.id = ?`).get(info.lastInsertRowid);
 
   await notifyBookingStatus(row, status, resource, date, startTime, endTime);
 
-  res.status(201).json({ booking: rowToBooking(row) });
+  res.status(201).json({ booking: rowToBooking(row), pricing: pricingBreakdown });
 });
 
 /* PUT /api/bookings/:code — update status (admin) or modify (owner) */
@@ -510,6 +676,11 @@ router.put('/:code', authenticate, async (req, res) => {
   const nextResource = resource ?? booking.resource;
   const dlabel = `${nextDate} — ${nextStart} - ${nextEnd}`;
   const statusChanged = nextStatus !== booking.status;
+  const scheduleChanged =
+    nextResource !== booking.resource ||
+    nextDate !== booking.date ||
+    nextStart !== booking.start_time ||
+    nextEnd !== booking.end_time;
 
   if (nextStatus === 'Pending' || nextStatus === 'Confirmed') {
     const bookable = await assertResourceBookable({
@@ -523,6 +694,38 @@ router.put('/:code', authenticate, async (req, res) => {
     if (!bookable.ok) {
       return res.status(bookable.status).json({ message: bookable.message });
     }
+    const resourceRow = booking.resource_id
+      ? await db.prepare('SELECT id, type FROM resources WHERE id = ?').get(booking.resource_id)
+      : await db.prepare('SELECT id, type FROM resources WHERE name = ?').get(nextResource);
+    const durationCheck = await assertMinimumDuration({
+      resourceType: resourceRow?.type || '',
+      startTime: nextStart,
+      endTime: nextEnd,
+    });
+    if (!durationCheck.ok) {
+      return res.status(durationCheck.status).json({ message: durationCheck.message });
+    }
+  }
+
+  let nextAmount = amount ?? booking.amount;
+  let nextPricingSnapshot = parsePricingSnapshot(booking.pricing_snapshot);
+
+  if (scheduleChanged) {
+    const user = await db.prepare('SELECT role FROM users WHERE id = ?').get(booking.user_id);
+    const resourceRow = booking.resource_id
+      ? await db.prepare('SELECT id, type FROM resources WHERE id = ?').get(booking.resource_id)
+      : await db.prepare('SELECT id, type FROM resources WHERE name = ?').get(nextResource);
+    const recalculatedPricing = await calculateBookingPriceForResource({
+      resourceType: resourceRow?.type || '',
+      resourceId: resourceRow?.id || booking.resource_id,
+      date: nextDate,
+      startTime: nextStart,
+      endTime: nextEnd,
+      addOnIds: parseAddOnIds(booking.add_on_ids),
+      userRole: user?.role || 'user',
+    });
+    nextAmount = recalculatedPricing.amount;
+    nextPricingSnapshot = recalculatedPricing;
   }
 
   await db
@@ -537,6 +740,7 @@ router.put('/:code', authenticate, async (req, res) => {
          end_time = ?,
          purpose = ?,
          notes = ?,
+         pricing_snapshot = ?,
          datetime_label = ?,
          status_updated_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE COALESCE(status_updated_at, created_at) END
        WHERE id = ?`,
@@ -546,11 +750,12 @@ router.put('/:code', authenticate, async (req, res) => {
       nextResource,
       nextDate,
       nextTime,
-      amount ?? booking.amount,
+      nextAmount,
       nextStart,
       nextEnd,
       purpose !== undefined ? purpose : booking.purpose || '',
       notes !== undefined ? notes : booking.notes || '',
+      nextPricingSnapshot ? JSON.stringify(nextPricingSnapshot) : null,
       dlabel,
       statusChanged ? 1 : 0,
       booking.id,

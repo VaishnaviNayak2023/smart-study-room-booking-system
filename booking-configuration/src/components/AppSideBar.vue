@@ -11,8 +11,8 @@
       <div class="brand">
         <div v-if="isAdmin" class="brand-logo"><q-icon name="apartment" size="18px" /></div>
         <div>
-          <div class="brand-title">{{ isAdmin ? 'Admin' : 'User Portal' }}</div>
-          <div class="brand-subtitle">{{ isAdmin ? 'Admin Dashboard' : 'Modern Workspace' }}</div>
+          <div class="brand-title">{{ brandTitle }}</div>
+          <div class="brand-subtitle">{{ brandSubtitle }}</div>
         </div>
       </div>
 
@@ -68,6 +68,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Notify } from 'quasar';
 import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
 import { useStudyroomStore } from '@/stores/studyroom-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 type NavigationItem = {
   label: string;
@@ -85,9 +86,20 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>();
 const router = useRouter();
 const route = useRoute();
 const studyroomStore = useStudyroomStore();
+const settingsStore = useSettingsStore();
 const logoutOpen = ref(false);
 
 const isAdmin = computed(() => props.admin);
+
+const brandTitle = computed(() => {
+  const name = settingsStore.systemName?.trim();
+  if (name) return name;
+  return isAdmin.value ? 'Admin' : 'User Portal';
+});
+
+const brandSubtitle = computed(() =>
+  isAdmin.value ? 'Admin Dashboard' : 'Modern Workspace',
+);
 
 const logoutMessage = computed(() =>
   isAdmin.value
@@ -111,6 +123,7 @@ const adminNavigation: NavigationItem[] = [
   { label: 'Bookings', icon: 'calendar_month', to: '/bookings' },
   { label: 'Pricing Rules', icon: 'payments', to: '/pricing-rules' },
   { label: 'Reports', icon: 'assessment', to: '/reports' },
+  { label: 'Notifications', icon: 'notifications_none', to: '/notifications' },
   { label: 'Settings', icon: 'settings', to: '/settings' },
   { label: 'Profile', icon: 'person_outline', to: '/profile' },
 ];
@@ -127,20 +140,20 @@ function doLogout() {
 </script>
 
 <style scoped>
-.sidebar-drawer { background: #f8fafc; }
-.sidebar { width: 100%; height: 100%; display: flex; flex-direction: column; background: #f8fafc; }
-.sidebar--admin { background: #ffffff; }
+.sidebar-drawer { background: var(--portal-sidebar); }
+.sidebar { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--portal-sidebar); }
+.sidebar--admin { background: var(--portal-sidebar); }
 .brand { display: flex; align-items: center; gap: 12px; padding: 28px 24px 18px; }
-.brand-logo { width: 38px; height: 38px; border-radius: 10px; background: #1e3a8a; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.brand-title { color: #1e3a8a; font-size: 18px; font-weight: 700; line-height: 1.2; }
-.brand-subtitle { margin-top: 4px; color: #64748b; font-size: 12px; }
+.brand-logo { width: 38px; height: 38px; border-radius: 10px; background: var(--portal-primary); color: var(--portal-on-primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.brand-title { color: var(--portal-primary); font-size: 18px; font-weight: 700; line-height: 1.2; }
+.brand-subtitle { margin-top: 4px; color: var(--portal-muted); font-size: 12px; }
 .navigation-list { padding: 8px 12px; flex: 1; }
-.navigation-item { height: 44px; min-height: 44px; margin: 4px 0; padding: 0 14px; border-radius: 12px; color: #64748b; }
-.navigation-item :deep(.q-item__section--avatar) { width: 32px; min-width: 32px; padding-right: 0; color: #64748b; }
+.navigation-item { height: 44px; min-height: 44px; margin: 4px 0; padding: 0 14px; border-radius: 12px; color: var(--portal-muted); }
+.navigation-item :deep(.q-item__section--avatar) { width: 32px; min-width: 32px; padding-right: 0; color: var(--portal-muted); }
 .navigation-icon { font-size: 20px; }
 .navigation-label { font-size: 14px; font-weight: 500; }
-.navigation-item-active { color: #1e3a8a; background: #e0e7ff; font-weight: 600; }
-.navigation-item-active :deep(.q-item__section--avatar) { color: #1e3a8a; }
+.navigation-item-active { color: var(--portal-primary); background: var(--portal-sidebar-active); font-weight: 600; }
+.navigation-item-active :deep(.q-item__section--avatar) { color: var(--portal-primary); }
 .bottom-actions { margin-top: auto; padding: 0 16px 20px; }
-.logout-button { width: 100%; min-height: 42px; border-radius: 10px; border-color: #e5e7eb; color: #374151; background: #fff; font-weight: 500; }
+.logout-button { width: 100%; min-height: 42px; border-radius: 10px; border-color: var(--portal-border); color: var(--portal-text-secondary); background: var(--portal-card); font-weight: 500; }
 </style>

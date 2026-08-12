@@ -175,7 +175,7 @@ onMounted(() => {
 
 .notification-card {
   border-radius: 14px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
   overflow: hidden;
 }
 
@@ -200,8 +200,8 @@ onMounted(() => {
 }
 
 .type-booking_confirmed {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--portal-status-confirmed-bg);
+  color: var(--portal-status-confirmed-text);
 }
 
 .type-reminder {
@@ -211,12 +211,12 @@ onMounted(() => {
 
 .type-system {
   background: #fee2e2;
-  color: #b91c1c;
+  color: var(--portal-status-unavailable-text);
 }
 
 .type-report {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--portal-status-pending-bg);
+  color: var(--portal-status-booked-text);
 }
 
 .notification-body {
@@ -236,14 +236,14 @@ onMounted(() => {
 }
 
 .notification-time {
-  color: #94a3b8;
+  color: var(--portal-muted);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .notification-message {
   margin-top: 4px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 13px;
   line-height: 1.45;
 }

@@ -68,11 +68,15 @@ api.interceptors.request.use((config) => {
 // Global response handler: clear auth + redirect on expired/invalid tokens.
 api.interceptors.response.use(
   (response) => response,
-(error: Error & { response?: { status?: number } }) => {
+(error: Error & { response?: { status?: number }; config?: { url?: string } }) => {
     if (error.response?.status === 401) {
-      clearToken();
-      if (!window.location.hash.startsWith('#/login')) {
-        redirectToLogin();
+      const url = error.config?.url || '';
+      const isAuthAttempt = url.includes('/auth/login') || url.includes('/auth/register');
+      if (!isAuthAttempt) {
+        clearToken();
+        if (!window.location.hash.startsWith('#/login')) {
+          redirectToLogin();
+        }
       }
     }
     return Promise.reject(error);

@@ -93,18 +93,18 @@ const emit = defineEmits<{
 .confirm-dialog__icon--primary,
 .confirm-dialog__icon--info {
   background: #e8eefc;
-  color: #1e3a8a;
+  color: var(--portal-primary);
 }
 
 .confirm-dialog__icon--danger {
   background: #fde8e8;
-  color: #dc2626;
+  color: var(--portal-error);
 }
 
 .confirm-dialog__title {
   font-size: 20px;
   font-weight: 700;
-  color: #111827;
+  color: var(--portal-text);
   margin-bottom: 8px;
 }
 
@@ -133,7 +133,7 @@ const emit = defineEmits<{
 }
 
 .confirm-dialog__cancel {
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
   color: #4b5563;
   border-radius: 10px;
   min-height: 42px;
@@ -142,12 +142,12 @@ const emit = defineEmits<{
 .confirm-dialog__confirm {
   border-radius: 10px;
   min-height: 42px;
-  color: #fff;
+  color: var(--portal-on-primary);
 }
 
 .confirm-dialog__confirm--primary,
 .confirm-dialog__confirm--info {
-  background: #1e3a8a;
+  background: var(--portal-primary);
 }
 
 .confirm-dialog__confirm--danger {

@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import env from './config/env.js';
+import { pricingContextKey } from './utils/pricingCalculator.js';
 
 const pool = mysql.createPool({
   host: env.DB_HOST,
@@ -147,12 +148,23 @@ async function ensureSchema() {
 
   await ensureColumn('bookings', 'purpose', "VARCHAR(255) NOT NULL DEFAULT ''");
   await ensureColumn('bookings', 'notes', 'TEXT NULL');
+  await ensureColumn('bookings', 'pricing_snapshot', 'JSON NULL');
+  await ensureColumn('bookings', 'add_on_ids', 'JSON NULL');
   // Tracks last status change for Confirmed Today / avg response metrics.
   await ensureColumn('bookings', 'status_updated_at', 'TIMESTAMP NULL');
+  await ensureColumn('users', 'phone_country_code', "VARCHAR(10) NOT NULL DEFAULT ''");
+  await ensureColumn('users', 'phone', "VARCHAR(32) NOT NULL DEFAULT ''");
+  await ensurePricingContextUniqueness();
   await db.exec(
     `UPDATE bookings
      SET status_updated_at = COALESCE(status_updated_at, created_at, CURRENT_TIMESTAMP)
      WHERE status_updated_at IS NULL`,
+  );
+  await db.exec(
+    `UPDATE bookings b
+     INNER JOIN users u ON u.id = b.user_id
+     SET b.user_name = u.name
+     WHERE (b.user_name IS NULL OR b.user_name = '') AND u.name <> ''`,
   );
 }
 
@@ -164,6 +176,37 @@ async function ensureColumn(table, column, definition) {
   );
   if (Number(rows[0]?.c || 0) === 0) {
     await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+async function ensurePricingContextUniqueness() {
+  const duplicates = await db.query(
+    `SELECT context
+     FROM pricing_rules
+     GROUP BY context
+     HAVING COUNT(*) > 1`,
+  );
+
+  for (const row of duplicates) {
+    const context = row.context;
+    const keep = await db
+      .prepare('SELECT id FROM pricing_rules WHERE context = ? ORDER BY updated_at DESC, id DESC LIMIT 1')
+      .get(context);
+
+    if (!keep?.id) continue;
+
+    await db
+      .prepare('DELETE FROM pricing_rules WHERE context = ? AND id <> ?')
+      .run(context, keep.id);
+  }
+
+  const indexes = await db.query(
+    `SHOW INDEX FROM pricing_rules
+     WHERE Key_name = 'uniq_pricing_rules_context'`,
+  );
+
+  if (!indexes.length) {
+    await db.exec('ALTER TABLE pricing_rules ADD UNIQUE KEY uniq_pricing_rules_context (context)');
   }
 }
 
@@ -219,10 +262,94 @@ export async function seedDatabase({ reset = false } = {}) {
 
   await pool.execute(
     'INSERT INTO settings (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)',
-    [JSON.stringify({ systemName: '', currency: '', maxHours: 8, advanceDays: 7 })],
+    [JSON.stringify({ systemName: process.env.SEED_SYSTEM_NAME || '', currency: 'INR (Rs.)', maxHours: 8, advanceDays: 7 })],
   );
 
+  const seedDemo =
+    process.env.SEED_DEMO_DATA === 'true' ||
+    (process.env.NODE_ENV !== 'production' && process.env.SEED_DEMO_DATA !== 'false');
+  if (seedDemo) {
+    await seedDemoResourcesAndPricing();
+  }
+
   return { seeded: true, inserted: seedUsers.length + 1, message: 'Database seeded successfully.' };
+}
+
+async function seedDemoResourcesAndPricing() {
+  const baseRate = Number(process.env.SEED_DEMO_BASE_RATE || 99);
+  const typeNames = String(process.env.SEED_DEMO_RESOURCE_TYPES || 'Meeting Rooms,Study Room')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  for (const name of typeNames) {
+    await pool.execute(
+      'INSERT INTO resource_types (name, icon, description) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE icon = VALUES(icon), description = VALUES(description)',
+      [name, 'meeting_room', `${name} bookings`],
+    );
+  }
+
+  const demoResources = [
+    {
+      name: 'Meeting Room A101',
+      type: typeNames[0] || 'Meeting Rooms',
+      capacity: 8,
+      location: '102, London Heights, Margao, Goa, India',
+      description: 'Conference room with projector.',
+    },
+    {
+      name: 'Study Pod S1',
+      type: typeNames[1] || typeNames[0] || 'Study Room',
+      capacity: 2,
+      location: 'Floor 2, Quiet Zone',
+      description: 'Individual study space.',
+    },
+  ];
+
+  for (const resource of demoResources) {
+    await pool.execute(
+      `INSERT INTO resources (name, type, capacity, location, description, available)
+       SELECT ?, ?, ?, ?, ?, 1 FROM DUAL
+       WHERE NOT EXISTS (SELECT 1 FROM resources WHERE name = ?)`,
+      [resource.name, resource.type, resource.capacity, resource.location, resource.description, resource.name],
+    );
+  }
+
+  await pool.execute(
+    'INSERT INTO pricing_rules (context, data) VALUES (?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)',
+    [
+      'general',
+      JSON.stringify({
+        baseRate,
+        minimumDuration: '1 Hour',
+        currency: 'INR',
+        applyTax: true,
+        taxRate: 8.5,
+        taxLabel: 'Tax',
+        rules: [],
+      }),
+    ],
+  );
+
+  for (const name of typeNames) {
+    const slug = pricingContextKey(name);
+    if (slug === 'general') continue;
+    await pool.execute(
+      'INSERT INTO pricing_rules (context, data) VALUES (?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)',
+      [slug, JSON.stringify({ hourlyRate: baseRate, freeFirstHour: false, rules: [], roleDiscounts: [] })],
+    );
+  }
+
+  const [legacyRows] = await pool.execute("SELECT id, data FROM pricing_rules WHERE context = 'study' LIMIT 1");
+  const studyRoomSlug = pricingContextKey('Study Room');
+  if (legacyRows.length && studyRoomSlug !== 'study') {
+    const legacy = legacyRows[0];
+    const data = typeof legacy.data === 'string' ? legacy.data : JSON.stringify(legacy.data);
+    await pool.execute(
+      'INSERT INTO pricing_rules (context, data) VALUES (?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)',
+      [studyRoomSlug, data],
+    );
+  }
 }
 
 export async function ensureDatabaseReady() {
@@ -232,6 +359,23 @@ export async function ensureDatabaseReady() {
 
   if (Number(userCount[0].c) === 0 && Number(settingsCount[0].c) === 0) {
     return seedDatabase({ reset: false });
+  }
+
+  const [generalPricing] = await pool.execute(
+    "SELECT COUNT(*) AS c FROM pricing_rules WHERE context = 'general'",
+  );
+  if (Number(generalPricing[0].c) === 0) {
+    await pool.execute('INSERT INTO pricing_rules (context, data) VALUES (?, ?)', [
+      'general',
+      JSON.stringify({
+        baseRate: 0,
+        currency: 'INR',
+        applyTax: false,
+        taxRate: 0,
+        taxLabel: 'Tax',
+        rules: [],
+      }),
+    ]);
   }
 
   return { seeded: false, inserted: 0, message: 'Database already has application data.' };

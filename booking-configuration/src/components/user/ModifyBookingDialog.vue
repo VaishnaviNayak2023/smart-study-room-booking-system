@@ -204,7 +204,7 @@ async function save() {
 .modify-dialog__title {
   font-size: 18px;
   font-weight: 700;
-  color: #111827;
+  color: var(--portal-text);
 }
 
 .modify-dialog__subtitle {
@@ -219,26 +219,26 @@ async function save() {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #eef2ff;
-  color: #1e3a8a;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
 }
 
 .current-label {
   font-size: 11px;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 
 .current-value {
   font-size: 13px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--portal-text);
 }
 
 .info-hint {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 

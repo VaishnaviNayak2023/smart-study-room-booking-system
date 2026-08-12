@@ -157,7 +157,7 @@
       </div>
       <div v-else-if="error" class="portal-error">
         <div>{{ error }}</div>
-        <q-btn unelevated no-caps color="primary" label="Retry" @click="loadBookings" />
+        <q-btn unelevated no-caps color="primary" label="Retry" @click="() => loadBookings()" />
       </div>
       <div v-else-if="!rows.length" class="portal-empty">
         <q-icon :name="viewTab === 'action' ? 'task_alt' : 'event_busy'" size="32px" />
@@ -221,7 +221,14 @@
         </template>
         <template #body-cell-actions="{ row }">
           <q-td align="right">
-            <q-btn outline no-caps size="sm" color="primary" label="Action" icon-right="expand_more">
+            <q-btn
+              outline
+              no-caps
+              size="sm"
+              class="action-menu-btn"
+              label="Action"
+              icon-right="expand_more"
+            >
               <q-menu>
                 <q-list style="min-width: 180px">
                   <q-item v-close-popup clickable @click="openDetails(row)">
@@ -398,7 +405,7 @@
       </div>
     </q-card>
 
-    <ModifyBookingDialog v-model="modifyOpen" :booking="selected" @saved="loadBookings" />
+    <ModifyBookingDialog v-model="modifyOpen" :booking="selected" @saved="() => loadBookings()" />
     <ConfirmDialog
       v-model="cancelOpen"
       title="Cancel Booking"
@@ -464,6 +471,7 @@ import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
 import BookingReceiptDialog from '@/components/user/BookingReceiptDialog.vue';
 import ModifyBookingDialog from '@/components/user/ModifyBookingDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
+import { useSettingsStore } from '@/stores/settings-store';
 
 type Booking = {
   id: string;
@@ -507,6 +515,7 @@ type Pagination = {
 
 const route = useRoute();
 const dashboardEvents = useDashboardEvents();
+const settingsStore = useSettingsStore();
 const loading = ref(true);
 const error = ref('');
 const rows = ref<Booking[]>([]);
@@ -526,6 +535,7 @@ const cancelling = ref(false);
 const detailsOpen = ref(false);
 const detailsMode = ref<'details' | 'receipt'>('details');
 const actionLoadingId = ref<string | null>(null);
+let skipNextDashboardReload = false;
 const resourceNames = ref<string[]>([]);
 const receiptOpen = ref(false);
 const receiptBookingCode = ref<string | null>(null);
@@ -620,10 +630,7 @@ function formatDateTime(value?: string) {
 }
 
 function formatAmount(amount?: string) {
-  if (amount == null || amount === '') return '—';
-  const raw = String(amount).trim();
-  if (raw.startsWith('$') || raw.startsWith('₹')) return raw;
-  return raw;
+  return settingsStore.formatAmount(amount);
 }
 
 function parseTimeToMinutes(value?: string) {
@@ -712,9 +719,12 @@ async function loadMeta() {
   }
 }
 
-async function loadBookings() {
-  loading.value = true;
-  error.value = '';
+async function loadBookings(options: { silent?: boolean } = {}) {
+  const { silent = false } = options;
+  if (!silent) {
+    loading.value = true;
+    error.value = '';
+  }
   try {
     const params: Record<string, string | number> = {
       view: viewTab.value === 'action' ? 'action' : 'all',
@@ -761,23 +771,128 @@ async function loadBookings() {
       };
     }
   } catch (err) {
-    error.value = apiErrorMessage(err, 'Unable to load bookings.');
-    rows.value = [];
+    if (!silent) {
+      error.value = apiErrorMessage(err, 'Unable to load bookings.');
+      rows.value = [];
+    }
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
+}
+
+function adjustStats(previousStatus: string, nextStatus: string) {
+  if (previousStatus === nextStatus) return;
+
+  if (previousStatus === 'Pending') {
+    stats.value.pending = Math.max(0, stats.value.pending - 1);
+  }
+
+  if (nextStatus === 'Confirmed' && previousStatus !== 'Confirmed') {
+    stats.value.confirmed += 1;
+    if (previousStatus === 'Pending') {
+      stats.value.confirmedToday += 1;
+    }
+  }
+
+  if (nextStatus === 'Cancelled' && previousStatus !== 'Cancelled') {
+    stats.value.cancelled += 1;
+  }
+
+  if (nextStatus === 'Completed' && previousStatus !== 'Completed') {
+    stats.value.completed = (stats.value.completed ?? 0) + 1;
+  }
+}
+
+function shouldRemoveRowAfterUpdate(booking: Booking) {
+  if (viewTab.value === 'action') return booking.status !== 'Pending';
+  if (statusFilter.value === 'Pending') return booking.status !== 'Pending';
+  return false;
+}
+
+function applyBookingUpdate(updated: Booking) {
+  const index = rows.value.findIndex((booking) => booking.id === updated.id);
+  if (index < 0) return;
+
+  const row = rows.value[index];
+  if (!row) return;
+
+  const previousStatus = row.status;
+  adjustStats(previousStatus, updated.status);
+
+  if (shouldRemoveRowAfterUpdate(updated)) {
+    rows.value = rows.value.filter((booking) => booking.id !== updated.id);
+    pagination.value.total = Math.max(0, pagination.value.total - 1);
+    pagination.value.totalPages = Math.max(
+      1,
+      Math.ceil(pagination.value.total / pagination.value.limit) || 1,
+    );
+    if (!rows.value.length && page.value > 1) {
+      page.value -= 1;
+      void loadBookings({ silent: true });
+    }
+  } else {
+    rows.value[index] = { ...row, ...updated };
+  }
+
+  if (selected.value?.id === updated.id) {
+    selected.value = { ...selected.value, ...updated };
+  }
+}
+
+function removeBookingFromList(bookingId: string) {
+  const index = rows.value.findIndex((booking) => booking.id === bookingId);
+  if (index < 0) return;
+
+  const row = rows.value[index];
+  if (!row) return;
+
+  const previousStatus = row.status;
+  if (previousStatus === 'Pending') {
+    stats.value.pending = Math.max(0, stats.value.pending - 1);
+  } else if (previousStatus === 'Confirmed') {
+    stats.value.confirmed = Math.max(0, stats.value.confirmed - 1);
+  } else if (previousStatus === 'Cancelled') {
+    stats.value.cancelled = Math.max(0, stats.value.cancelled - 1);
+  } else if (previousStatus === 'Completed') {
+    stats.value.completed = Math.max(0, (stats.value.completed ?? 0) - 1);
+  }
+  stats.value.total = Math.max(0, stats.value.total - 1);
+
+  rows.value = rows.value.filter((booking) => booking.id !== bookingId);
+  pagination.value.total = Math.max(0, pagination.value.total - 1);
+  pagination.value.totalPages = Math.max(
+    1,
+    Math.ceil(pagination.value.total / pagination.value.limit) || 1,
+  );
+
+  if (selected.value?.id === bookingId) {
+    selected.value = null;
+  }
+
+  if (!rows.value.length && page.value > 1) {
+    page.value -= 1;
+    void loadBookings({ silent: true });
+  }
+}
+
+function notifyDashboardRefreshWithoutReload() {
+  skipNextDashboardReload = true;
+  emitDashboardRefresh();
+  queueMicrotask(() => {
+    skipNextDashboardReload = false;
+  });
 }
 
 async function updateStatus(row: Booking, status: string) {
   actionLoadingId.value = row.id;
   try {
-    await api.put(`/bookings/${row.id}`, { status });
+    const { data } = await api.put<{ booking: Booking }>(`/bookings/${row.id}`, { status });
+    applyBookingUpdate(data.booking);
     Notify.create({
       type: 'positive',
       message: status === 'Confirmed' ? 'Booking approved.' : 'Booking rejected.',
     });
-    emitDashboardRefresh();
-    await Promise.all([loadBookings(), loadMeta()]);
+    notifyDashboardRefreshWithoutReload();
   } catch (err) {
     Notify.create({
       type: 'negative',
@@ -809,12 +924,13 @@ function openReceipt(row: Booking) {
 async function doCancel() {
   if (!selected.value) return;
   cancelling.value = true;
+  const bookingId = selected.value.id;
   try {
-    await api.delete(`/bookings/${selected.value.id}`);
+    await api.delete(`/bookings/${bookingId}`);
     Notify.create({ type: 'positive', message: 'Booking cancelled.' });
     cancelOpen.value = false;
-    emitDashboardRefresh();
-    await Promise.all([loadBookings(), loadMeta()]);
+    removeBookingFromList(bookingId);
+    notifyDashboardRefreshWithoutReload();
   } catch (err) {
     Notify.create({
       type: 'negative',
@@ -841,8 +957,9 @@ onMounted(() => {
   stopWatcher = watch(
     () => dashboardEvents.version,
     () => {
+      if (skipNextDashboardReload) return;
       void loadMeta();
-      void loadBookings();
+      void loadBookings({ silent: true });
     },
   );
 });
@@ -859,11 +976,11 @@ onUnmounted(() => {
   margin: 0;
   font-size: clamp(26px, 3vw, 32px);
   font-weight: 750;
-  color: #0f172a;
+  color: var(--portal-text);
 }
 .page-header p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--portal-muted);
   max-width: 720px;
 }
 .view-tabs {
@@ -879,19 +996,19 @@ onUnmounted(() => {
   padding: 8px 4px;
   cursor: pointer;
   font-weight: 650;
-  color: #64748b;
+  color: var(--portal-muted);
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 .tab.active {
-  color: #1e3a8a;
-  border-bottom-color: #1e3a8a;
+  color: var(--portal-primary);
+  border-bottom-color: var(--portal-primary);
   background: transparent;
 }
 .badge {
   background: #dc2626;
-  color: #fff;
+  color: var(--portal-on-primary);
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 11px;
@@ -906,7 +1023,7 @@ onUnmounted(() => {
 }
 .stat-card {
   border-radius: 14px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
 }
 .stat-card__body {
   display: flex;
@@ -915,7 +1032,7 @@ onUnmounted(() => {
   gap: 12px;
 }
 .stat-label {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -923,15 +1040,15 @@ onUnmounted(() => {
   margin-top: 8px;
   font-size: 28px;
   font-weight: 750;
-  color: #0f172a;
+  color: var(--portal-text);
 }
 .stat-value.danger {
-  color: #dc2626;
+  color: var(--portal-error);
 }
 .stat-hint {
   margin-top: 4px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--portal-muted);
 }
 .stat-icon {
   width: 40px;
@@ -941,20 +1058,20 @@ onUnmounted(() => {
   place-items: center;
 }
 .stat-icon.is-pending {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--portal-status-pending-bg);
+  color: var(--portal-status-pending-text);
 }
 .stat-icon.is-confirmed {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--portal-status-confirmed-bg);
+  color: var(--portal-status-confirmed-text);
 }
 .stat-icon.is-warning {
   background: #fee2e2;
-  color: #b91c1c;
+  color: var(--portal-status-unavailable-text);
 }
 .table-card {
   border-radius: 14px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
   overflow: hidden;
 }
 .toolbar {
@@ -986,10 +1103,10 @@ onUnmounted(() => {
 .requester-id {
   font-weight: 700;
   font-size: 13px;
-  color: #0f172a;
+  color: var(--portal-text);
 }
 .requester-name {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   margin-top: 2px;
 }
@@ -998,7 +1115,7 @@ onUnmounted(() => {
   font-size: 13px;
 }
 .resource-location {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   margin-top: 2px;
   display: inline-flex;
@@ -1012,44 +1129,64 @@ onUnmounted(() => {
   font-weight: 700;
 }
 .status-chip.is-confirmed {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--portal-status-confirmed-bg);
+  color: var(--portal-status-confirmed-text);
 }
 .status-chip.is-pending {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--portal-status-pending-bg);
+  color: var(--portal-status-pending-text);
 }
 .status-chip.is-cancelled {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--portal-summary-bg);
+  color: var(--portal-muted);
 }
 .status-chip.is-completed {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--portal-summary-bg);
+  color: var(--portal-text-secondary);
 }
 .schedule-date {
   font-weight: 600;
   font-size: 13px;
 }
 .schedule-time {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   margin-top: 2px;
 }
 .duration {
-  color: #94a3b8;
+  color: var(--portal-muted);
 }
 .urgency-cell {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   font-weight: 600;
 }
 .urgency-cell.is-stale {
-  color: #dc2626;
+  color: var(--portal-error);
 }
+.action-menu-btn {
+  background: var(--portal-card) !important;
+  color: var(--portal-text-secondary) !important;
+  border: 1px solid var(--portal-border) !important;
+  border-radius: 8px;
+  font-weight: 600;
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.action-menu-btn:hover {
+  background: var(--portal-primary-soft) !important;
+  color: var(--portal-primary) !important;
+  border-color: var(--portal-primary) !important;
+}
+
+.action-menu-btn :deep(.q-icon) {
+  color: inherit;
+}
+
 .action-group {
   display: flex;
   gap: 6px;
@@ -1061,8 +1198,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-top: 1px solid #e5e7eb;
-  color: #64748b;
+  border-top: 1px solid var(--portal-border);
+  color: var(--portal-muted);
   font-size: 13px;
   gap: 12px;
   flex-wrap: wrap;
@@ -1081,8 +1218,8 @@ onUnmounted(() => {
   border-radius: 8px;
 }
 .page-btn.active {
-  background: #1e3a8a;
-  color: #fff;
+  background: var(--portal-primary);
+  color: var(--portal-on-primary);
 }
 .cancel-details {
   display: flex;
@@ -1090,15 +1227,15 @@ onUnmounted(() => {
   align-items: center;
   padding: 12px;
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border: 1px solid var(--portal-border);
+  background: var(--portal-muted-bg);
 }
 .cancel-title {
   font-weight: 700;
 }
 .cancel-meta {
   font-size: 12px;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 .details-dialog {
   width: min(480px, 92vw);
@@ -1106,7 +1243,7 @@ onUnmounted(() => {
 }
 .details-body {
   font-size: 14px;
-  color: #334155;
+  color: var(--portal-text-secondary);
 }
 @media (max-width: 900px) {
   .stats-grid--two {

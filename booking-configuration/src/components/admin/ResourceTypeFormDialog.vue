@@ -12,7 +12,14 @@
           <q-input v-model="form.description" outlined dense type="textarea" autogrow label="Description" />
           <div class="row q-col-gutter-md">
             <div class="col-6">
-              <q-input v-model="form.icon" outlined dense label="Icon name" hint="Material icon name" />
+              <q-input
+                v-model="form.icon"
+                outlined
+                dense
+                label="Icon name"
+                hint="Material icon name (e.g. meeting_room)"
+                :rules="[(v) => !!String(v || '').trim() || 'Icon is required']"
+              />
             </div>
             <div class="col-6">
               <q-select
@@ -65,7 +72,7 @@ const saving = ref(false);
 const form = reactive<ResourceTypeFormData>({
   name: '',
   description: '',
-  icon: 'meeting_room',
+  icon: '',
   color: 'blue',
 });
 
@@ -77,7 +84,7 @@ watch(
     if (!type) {
       form.name = '';
       form.description = '';
-      form.icon = 'meeting_room';
+      form.icon = '';
       form.color = 'blue';
       return;
     }

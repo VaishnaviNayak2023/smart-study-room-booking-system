@@ -69,10 +69,12 @@ import api from '@/services/api';
 import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
 import ResourceFormDialog from '@/components/admin/ResourceFormDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { Resource, ResourceFormData, ResourceType } from '@/types/resources';
 
 const route = useRoute();
 const dashboardEvents = useDashboardEvents();
+const settingsStore = useSettingsStore();
 const loading = ref(true);
 const error = ref('');
 const resources = ref<Resource[]>([]);
@@ -192,6 +194,8 @@ async function loadResources() {
         availabilityStatus,
         activeBookingId: r.activeBookingId ?? null,
         activeBookingStatus: r.activeBookingStatus ?? null,
+        hourlyRate: r.hourlyRate ?? 0,
+        currency: r.currency || settingsStore.currencyCode,
         // Effective bookable state from API (in service + not booked).
         available: !!r.available,
       };
@@ -276,28 +280,42 @@ watch(
   },
 );
 
-onMounted(() => {
-  void loadResources();
+onMounted(async () => {
+  await loadResources();
   if (route.query.action === 'new') void openCreate();
+  const editId = route.query.id;
+  if (editId) {
+    const resource = resources.value.find((row) => String(row.id) === String(editId));
+    if (resource) void openEdit(resource);
+  }
 });
+
+watch(
+  () => route.query.id,
+  (editId) => {
+    if (!editId || !resources.value.length) return;
+    const resource = resources.value.find((row) => String(row.id) === String(editId));
+    if (resource) void openEdit(resource);
+  },
+);
 </script>
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
 .page-header h1 { margin: 0; font-size: clamp(26px, 3vw, 32px); font-weight: 750; }
-.page-header p { margin: 6px 0 0; color: #64748b; }
-.primary-btn { background: #1e3a8a; color: #fff; border-radius: 10px; min-height: 40px; }
-.filter-card, .table-card { border-radius: 14px; border-color: #e5e7eb; margin-bottom: 16px; }
+.page-header p { margin: 6px 0 0; color: var(--portal-muted); }
+.primary-btn { background: var(--portal-primary); color: var(--portal-on-primary); border-radius: 10px; min-height: 40px; }
+.filter-card, .table-card { border-radius: 14px; border-color: var(--portal-border); margin-bottom: 16px; }
 .filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .name-cell { display: flex; gap: 12px; align-items: center; }
-.resource-icon { width: 36px; height: 36px; border-radius: 10px; background: #eef2ff; color: #1e3a8a; display: flex; align-items: center; justify-content: center; }
+.resource-icon { width: 36px; height: 36px; border-radius: 10px; background: var(--portal-primary-soft); color: var(--portal-primary); display: flex; align-items: center; justify-content: center; }
 .resource-name { font-weight: 600; }
-.resource-id { color: #64748b; font-size: 11px; margin-top: 2px; }
+.resource-id { color: var(--portal-muted); font-size: 11px; margin-top: 2px; }
 .status-chip { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-.status-chip.available { background: #dcfce7; color: #15803d; }
-.status-chip.booked { background: #fee2e2; color: #b91c1c; }
+.status-chip.available { background: var(--portal-status-confirmed-bg); color: var(--portal-status-confirmed-text); }
+.status-chip.booked { background: #fee2e2; color: var(--portal-status-unavailable-text); }
 .status-chip.maintenance { background: #ffedd5; color: #c2410c; }
-.pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 13px; flex-wrap: wrap; gap: 8px; }
+.pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid #e5e7eb; color: var(--portal-muted); font-size: 13px; flex-wrap: wrap; gap: 8px; }
 .page-controls { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 700px) { .page-header { flex-direction: column; } }
 </style>

@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": "..",
+    "paths": {
+      "@playwright/test": ["e2e/playwright-test-stub.ts"]
+    }
+  },
+  "include": ["./**/*.ts", "../playwright.config.ts"]
+}

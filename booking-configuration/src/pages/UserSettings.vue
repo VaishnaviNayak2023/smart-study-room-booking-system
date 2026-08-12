@@ -15,30 +15,24 @@
       <q-btn unelevated no-caps color="primary" label="Retry" @click="loadPreferences" />
     </div>
     <template v-else>
+      <q-card flat bordered class="settings-card appearance-card">
+        <q-card-section>
+          <ThemeSelector
+            :model-value="themeStore.preference"
+            @update:model-value="onThemeChange"
+          />
+        </q-card-section>
+      </q-card>
+
       <div class="settings-grid">
         <q-card flat bordered class="settings-card">
           <q-card-section>
             <div class="card-title">
-              <div class="card-icon display"><q-icon name="palette" /></div>
-              Display
+              <div class="card-icon display"><q-icon name="translate" /></div>
+              Language
             </div>
 
-            <div class="field-label">Theme Preference</div>
-            <div class="theme-group">
-              <button
-                v-for="option in themeOptions"
-                :key="option.value"
-                type="button"
-                class="theme-option"
-                :class="{ active: form.theme === option.value }"
-                @click="form.theme = option.value"
-              >
-                <q-icon :name="option.icon" size="18px" />
-                {{ option.label }}
-              </button>
-            </div>
-
-            <div class="field-label q-mt-md">Language</div>
+            <div class="field-label">Language</div>
             <q-select
               v-model="form.language"
               outlined
@@ -122,9 +116,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { Notify, useQuasar } from 'quasar';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { Notify } from 'quasar';
 import api from '@/services/api';
+import ThemeSelector from '@/components/ThemeSelector.vue';
+import { useThemeStore } from '@/stores/theme-store';
+import { normalizeThemePreference, type ThemePreference } from '@/utils/theme';
 
 type ChannelPrefs = { email: boolean; push: boolean; in_app: boolean };
 type NotificationPrefs = {
@@ -141,14 +138,14 @@ type Preferences = {
   notificationPrefs: NotificationPrefs;
 };
 
-const $q = useQuasar();
+const themeStore = useThemeStore();
 const loading = ref(true);
 const error = ref('');
 const saving = ref(false);
 const savedSnapshot = ref('');
 
 const form = reactive<Preferences>({
-  theme: 'light',
+  theme: 'auto',
   language: 'en-US',
   profileVisibility: true,
   activityStatus: false,
@@ -159,11 +156,6 @@ const form = reactive<Preferences>({
   },
 });
 
-const themeOptions = [
-  { label: 'Light', value: 'light', icon: 'light_mode' },
-  { label: 'Dark', value: 'dark', icon: 'dark_mode' },
-  { label: 'System', value: 'system', icon: 'desktop_windows' },
-];
 
 const languageOptions = [
   { label: 'English (United States)', value: 'en-US' },
@@ -190,14 +182,15 @@ const preferenceRows = [
 
 const dirty = computed(() => JSON.stringify(form) !== savedSnapshot.value);
 
-function applyTheme(theme: string) {
-  if (theme === 'dark') $q.dark.set(true);
-  else if (theme === 'light') $q.dark.set(false);
-  else $q.dark.set(window.matchMedia('(prefers-color-scheme: dark)').matches);
+function onThemeChange(preference: ThemePreference) {
+  themeStore.setPreference(preference);
+  form.theme = preference;
 }
 
 function assignForm(preferences: Preferences) {
-  form.theme = preferences.theme || 'light';
+  const theme = normalizeThemePreference(preferences.theme);
+  form.theme = theme;
+  themeStore.setPreference(theme, { sync: false });
   form.language = preferences.language || 'en-US';
   form.profileVisibility = !!preferences.profileVisibility;
   form.activityStatus = !!preferences.activityStatus;
@@ -219,8 +212,14 @@ function assignForm(preferences: Preferences) {
     },
   };
   savedSnapshot.value = JSON.stringify(form);
-  applyTheme(form.theme);
 }
+
+watch(
+  () => themeStore.preference,
+  (value) => {
+    form.theme = value;
+  },
+);
 
 async function loadPreferences() {
   loading.value = true;
@@ -277,7 +276,11 @@ onMounted(() => {
 
 .page-header p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--portal-muted);
+}
+
+.appearance-card {
+  margin-bottom: 16px;
 }
 
 .settings-grid {
@@ -289,7 +292,7 @@ onMounted(() => {
 
 .settings-card {
   border-radius: 14px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
 }
 
 .prefs-card {
@@ -303,6 +306,7 @@ onMounted(() => {
   margin-bottom: 16px;
   font-size: 16px;
   font-weight: 700;
+  color: var(--portal-text);
 }
 
 .card-icon {
@@ -315,50 +319,25 @@ onMounted(() => {
 }
 
 .card-icon.display {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
 }
 
 .card-icon.privacy {
-  background: #f3e8ff;
-  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.15);
+  color: #a78bfa;
 }
 
 .card-icon.notify {
-  background: #dcfce7;
-  color: #15803d;
+  background: rgba(22, 163, 74, 0.15);
+  color: var(--portal-success);
 }
 
 .field-label {
   margin-bottom: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #475569;
-}
-
-.theme-group {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.theme-option {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 42px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  color: #475569;
-  cursor: pointer;
-}
-
-.theme-option.active {
-  border-color: #1e3a8a;
-  color: #1e3a8a;
-  background: #eef2ff;
+  color: var(--portal-text-secondary);
 }
 
 .toggle-row {
@@ -371,11 +350,12 @@ onMounted(() => {
 
 .toggle-title {
   font-weight: 600;
+  color: var(--portal-text);
 }
 
 .toggle-sub {
   margin-top: 2px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
@@ -394,25 +374,26 @@ onMounted(() => {
 }
 
 .prefs-head {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   font-weight: 700;
   padding-bottom: 8px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--portal-border);
 }
 
 .prefs-row {
   padding: 10px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--portal-border-subtle);
 }
 
 .prefs-title {
   font-weight: 600;
+  color: var(--portal-text);
 }
 
 .prefs-sub {
   margin-top: 2px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
@@ -425,7 +406,7 @@ onMounted(() => {
 .save-btn {
   border-radius: 10px;
   min-height: 40px;
-  background: #1e3a8a;
+  background: var(--portal-primary);
 }
 
 @media (max-width: 900px) {
@@ -436,10 +417,6 @@ onMounted(() => {
   .prefs-head,
   .prefs-row {
     grid-template-columns: minmax(0, 1fr) repeat(3, 56px);
-  }
-
-  .theme-group {
-    grid-template-columns: 1fr;
   }
 }
 </style>

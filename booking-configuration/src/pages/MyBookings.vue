@@ -183,13 +183,15 @@
           <div v-if="selected.location"><strong>Location:</strong> {{ selected.location }}</div>
           <div v-if="selected.purpose"><strong>Purpose:</strong> {{ selected.purpose }}</div>
           <div v-if="selected.notes"><strong>Notes:</strong> {{ selected.notes }}</div>
-          <div><strong>Amount:</strong> {{ selected.amount }}</div>
+          <div><strong>Amount:</strong> {{ formatAmount(selected.amount) }}</div>
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat no-caps label="Close" @click="detailsOpen = false" />
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <BookingReceiptDialog v-model="receiptOpen" :booking-code="receiptBookingCode" />
   </q-page>
 </template>
 
@@ -200,8 +202,10 @@ import { Notify } from 'quasar';
 import api from '@/services/api';
 import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
 import ModifyBookingDialog from '@/components/user/ModifyBookingDialog.vue';
+import BookingReceiptDialog from '@/components/user/BookingReceiptDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 import { useNotificationsStore } from '@/stores/notifications-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 type Booking = {
   id: string;
@@ -220,6 +224,7 @@ type Booking = {
 const route = useRoute();
 const notificationsStore = useNotificationsStore();
 const dashboardEvents = useDashboardEvents();
+const settingsStore = useSettingsStore();
 
 const loading = ref(true);
 const error = ref('');
@@ -239,6 +244,8 @@ const cancelOpen = ref(false);
 const cancelling = ref(false);
 const detailsOpen = ref(false);
 const detailsMode = ref<'details' | 'receipt'>('details');
+const receiptOpen = ref(false);
+const receiptBookingCode = ref<string | null>(null);
 
 function isUpcoming(booking: Booking) {
   if (booking.status === 'Cancelled' || booking.status === 'Completed') return false;
@@ -291,6 +298,10 @@ function formatDate(value?: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatAmount(amount?: string) {
+  return settingsStore.formatAmount(amount);
+}
+
 function statusClass(status: string) {
   const s = status.toLowerCase();
   if (s === 'confirmed') return 'is-confirmed';
@@ -330,9 +341,8 @@ function openDetails(booking: Booking) {
 }
 
 function openReceipt(booking: Booking) {
-  selected.value = booking;
-  detailsMode.value = 'receipt';
-  detailsOpen.value = true;
+  receiptBookingCode.value = booking.id;
+  receiptOpen.value = true;
 }
 
 async function doCancel() {
@@ -393,7 +403,7 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   margin-top: 6px;
-  color: #1e3a8a;
+  color: var(--portal-primary);
   font-size: 13px;
   font-weight: 600;
 }
@@ -402,7 +412,7 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #1e3a8a;
+  background: var(--portal-primary);
 }
 
 .header-actions {
@@ -413,7 +423,7 @@ onMounted(() => {
 .header-actions :deep(.q-btn),
 .filter-card {
   border-radius: 10px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
 }
 
 .tabs {
@@ -427,7 +437,7 @@ onMounted(() => {
   border: 0;
   background: transparent;
   padding: 10px 0;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -435,8 +445,8 @@ onMounted(() => {
 }
 
 .tab.active {
-  color: #1e3a8a;
-  border-bottom-color: #1e3a8a;
+  color: var(--portal-primary);
+  border-bottom-color: var(--portal-primary);
 }
 
 .booking-list {
@@ -447,7 +457,7 @@ onMounted(() => {
 
 .booking-card {
   border-radius: 14px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
 }
 
 .booking-row {
@@ -470,8 +480,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eef2ff;
-  color: #1e3a8a;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
   flex-shrink: 0;
 }
 
@@ -489,7 +499,7 @@ onMounted(() => {
 
 .booking-location {
   margin-top: 2px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
@@ -503,23 +513,23 @@ onMounted(() => {
 }
 
 .status-chip.is-confirmed {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--portal-status-confirmed-bg);
+  color: var(--portal-status-confirmed-text);
 }
 
 .status-chip.is-pending {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--portal-status-pending-bg);
+  color: var(--portal-status-pending-text);
 }
 
 .status-chip.is-completed {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--portal-summary-bg);
+  color: var(--portal-text-secondary);
 }
 
 .status-chip.is-cancelled {
   background: #fee2e2;
-  color: #b91c1c;
+  color: var(--portal-status-unavailable-text);
 }
 
 .when-date {
@@ -529,7 +539,7 @@ onMounted(() => {
 
 .when-time {
   margin-top: 2px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
@@ -541,15 +551,15 @@ onMounted(() => {
 }
 
 .primary-action {
-  background: #1e3a8a;
-  color: #fff;
+  background: var(--portal-primary);
+  color: var(--portal-on-primary);
   border-radius: 10px;
 }
 
 .secondary-action {
   border-color: #c7d2fe;
-  color: #1e3a8a;
-  background: #eef2ff;
+  color: var(--portal-primary);
+  background: var(--portal-primary-soft);
   border-radius: 10px;
 }
 
@@ -559,7 +569,7 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   margin-top: 18px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 13px;
 }
 
@@ -581,8 +591,8 @@ onMounted(() => {
   align-items: center;
   padding: 12px;
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border: 1px solid var(--portal-border);
+  background: var(--portal-muted-bg);
 }
 
 .cancel-details__title {
@@ -591,7 +601,7 @@ onMounted(() => {
 
 .cancel-details__meta {
   font-size: 12px;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 
 @media (max-width: 900px) {

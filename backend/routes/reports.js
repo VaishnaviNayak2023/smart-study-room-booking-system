@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import { currencySymbol, getSettingsCurrencyCode } from '../utils/currency.js';
 
 const router = Router();
 
@@ -15,8 +16,18 @@ function trendPercent(current, previous) {
   return Math.round(((current - previous) / previous) * 100);
 }
 
+function formatReportMoney(amount, code) {
+  const value = Number(amount) || 0;
+  if (code === 'INR') {
+    return `Rs. ${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  }
+  const sym = currencySymbol(code).trim();
+  return `${sym}${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
 /* GET /api/reports */
 router.get('/', authenticate, authorize('admin'), async (req, res) => {
+  const currencyCode = await getSettingsCurrencyCode(db);
   const allBookings = await db.prepare('SELECT * FROM bookings').all();
   const totalBookings = allBookings.length;
   const totalResourcesRow = await db.prepare('SELECT COUNT(*) AS c FROM resources').get();
@@ -80,7 +91,7 @@ router.get('/', authenticate, authorize('admin'), async (req, res) => {
   const stats = [
     {
       label: 'TOTAL REVENUE',
-      value: `$${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+      value: formatReportMoney(revenue, currencyCode),
       icon: 'payments',
       color: 'green',
       trend: trendPercent(revenueThisMonth, revenueLastMonth),

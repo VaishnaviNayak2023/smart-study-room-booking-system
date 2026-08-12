@@ -86,46 +86,51 @@ async function countDynamicallyAvailableResources() {
 
 /* GET /api/dashboard — admin stats + recent bookings */
 router.get('/', authenticate, authorize('admin'), async (req, res) => {
-  const totalResourcesRow = await db.prepare('SELECT COUNT(*) AS c FROM resources').get();
-  const availableResources = await countDynamicallyAvailableResources();
-  const totalBookingsRow = await db.prepare('SELECT COUNT(*) AS c FROM bookings').get();
-  const totalUsersRow = await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'user'").get();
-  const pendingBookingsRow = await db.prepare("SELECT COUNT(*) AS c FROM bookings WHERE status = 'Pending'").get();
-  const confirmedBookingsRow = await db.prepare("SELECT COUNT(*) AS c FROM bookings WHERE status = 'Confirmed'").get();
+  try {
+    const totalResourcesRow = await db.prepare('SELECT COUNT(*) AS c FROM resources').get();
+    const availableResources = await countDynamicallyAvailableResources();
+    const totalBookingsRow = await db.prepare('SELECT COUNT(*) AS c FROM bookings').get();
+    const totalUsersRow = await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'user'").get();
+    const pendingBookingsRow = await db.prepare("SELECT COUNT(*) AS c FROM bookings WHERE status = 'Pending'").get();
+    const confirmedBookingsRow = await db.prepare("SELECT COUNT(*) AS c FROM bookings WHERE status = 'Confirmed'").get();
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todaysBookingsRow = await db
-    .prepare('SELECT COUNT(*) AS c FROM bookings WHERE date(created_at) = date(?)')
-    .get(today);
+    const today = new Date().toISOString().slice(0, 10);
+    const todaysBookingsRow = await db
+      .prepare('SELECT COUNT(*) AS c FROM bookings WHERE date(created_at) = date(?)')
+      .get(today);
 
-  const recentRows = await db
-    .prepare(`${bookingSelect} ORDER BY b.id DESC LIMIT 6`)
-    .all();
+    const recentRows = await db
+      .prepare(`${bookingSelect} ORDER BY b.id DESC LIMIT 6`)
+      .all();
 
-  const recent = recentRows.map((r) => ({
-    id: r.booking_code,
-    user: r.user_name,
-    resource: r.resource,
-    date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date || '').slice(0, 10),
-    time: r.time,
-    startTime: r.start_time,
-    endTime: r.end_time,
-    status: r.status,
-    location: r.location || '',
-  }));
+    const recent = recentRows.map((r) => ({
+      id: r.booking_code,
+      user: r.user_name,
+      resource: r.resource,
+      date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date || '').slice(0, 10),
+      time: r.time,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      status: r.status,
+      location: r.location || '',
+    }));
 
-  res.json({
-    stats: {
-      totalResources: totalResourcesRow.c,
-      availableResources,
-      totalBookings: totalBookingsRow.c,
-      todaysBookings: todaysBookingsRow.c,
-      totalUsers: totalUsersRow.c,
-      pendingBookings: pendingBookingsRow.c,
-      confirmedBookings: confirmedBookingsRow.c,
-    },
-    bookings: recent,
-  });
+    res.json({
+      stats: {
+        totalResources: Number(totalResourcesRow?.c) || 0,
+        availableResources,
+        totalBookings: Number(totalBookingsRow?.c) || 0,
+        todaysBookings: Number(todaysBookingsRow?.c) || 0,
+        totalUsers: Number(totalUsersRow?.c) || 0,
+        pendingBookings: Number(pendingBookingsRow?.c) || 0,
+        confirmedBookings: Number(confirmedBookingsRow?.c) || 0,
+      },
+      bookings: recent,
+    });
+  } catch (err) {
+    console.error('GET /api/dashboard failed:', err);
+    res.status(500).json({ message: 'Unable to load admin dashboard.' });
+  }
 });
 
 /* GET /api/dashboard/user — current user stats + next upcoming */

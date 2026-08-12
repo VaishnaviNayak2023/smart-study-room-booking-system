@@ -40,7 +40,7 @@ docker compose up --build
 5. Open the frontend in a browser:
 
 - Frontend: http://localhost:9000
-- Backend API: http://localhost:5000
+- Backend API: http://localhost:5006
 
 ## Environment configuration
 
@@ -61,7 +61,7 @@ MYSQL_ROOT_PASSWORD=change_me_root_password
 MYSQL_PORT=3306
 
 # Backend
-PORT=5000
+PORT=5006
 CLIENT_ORIGIN=http://localhost:9000
 CORS_ORIGINS=http://localhost:9000
 DB_HOST=localhost
@@ -80,7 +80,7 @@ SEED_USER_EMAIL=user@local.test
 SEED_USER_PASSWORD=ChangeMe123!
 
 # Frontend
-VITE_API_URL=http://localhost:5000
+VITE_API_URL=http://localhost:5006
 VITE_APP_NAME=Booking Configuration
 VITE_DEFAULT_CURRENCY=
 FRONTEND_PORT=9000
@@ -100,7 +100,7 @@ MySQL container
 Docker volume
 ```
 
-The browser reaches the backend over the exposed host port (`http://localhost:5000`), while the backend reaches MySQL through the Docker service name `mysql`.
+The browser reaches the backend over the exposed host port (`http://localhost:5006`), while the backend reaches MySQL through the Docker service name `mysql`.
 
 ## Docker Compose services
 
@@ -225,7 +225,7 @@ Use values from your `.env` file:
 Backend health endpoint:
 
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:5006/health
 ```
 
 Example response:

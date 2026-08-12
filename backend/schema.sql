@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
   name VARCHAR(255) NOT NULL DEFAULT '',
+  phone_country_code VARCHAR(10) NOT NULL DEFAULT '',
+  phone VARCHAR(32) NOT NULL DEFAULT '',
   role ENUM('admin', 'user') NOT NULL DEFAULT 'user',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -42,30 +44,34 @@ CREATE TABLE IF NOT EXISTS rooms (
 
 CREATE TABLE IF NOT EXISTS bookings (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  booking_code VARCHAR(50) NOT NULL,
+  booking_code VARCHAR(255) NOT NULL UNIQUE,
   user_id INT NULL,
-  user_name VARCHAR(255) NOT NULL DEFAULT 'User',
+  user_name VARCHAR(255) NOT NULL DEFAULT '',
   resource_id INT NULL,
   resource VARCHAR(255) NOT NULL,
-  date VARCHAR(255) NOT NULL,
+  date DATE NOT NULL,
   time VARCHAR(255) NOT NULL DEFAULT '',
   datetime_label VARCHAR(255) NOT NULL DEFAULT '',
   status VARCHAR(50) NOT NULL DEFAULT 'Confirmed',
   amount VARCHAR(50) NOT NULL DEFAULT '0.00',
-  start_time VARCHAR(255) NOT NULL DEFAULT '',
-  end_time VARCHAR(255) NOT NULL DEFAULT '',
+  start_time VARCHAR(50) NOT NULL DEFAULT '',
+  end_time VARCHAR(50) NOT NULL DEFAULT '',
   purpose VARCHAR(255) NOT NULL DEFAULT '',
   notes TEXT NULL,
+  pricing_snapshot JSON NULL,
+  add_on_ids JSON NULL,
+  status_updated_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_bookings_user FOREIGN KEY (user_id) REFERENCES users(id),
-  CONSTRAINT fk_bookings_resource FOREIGN KEY (resource_id) REFERENCES resources(id)
+  CONSTRAINT fk_bookings_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_bookings_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS pricing_rules (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  context VARCHAR(100) NOT NULL DEFAULT 'study',
+  context VARCHAR(255) NOT NULL,
   data JSON NOT NULL,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_pricing_rules_context (context)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS settings (

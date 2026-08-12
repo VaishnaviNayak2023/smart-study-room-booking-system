@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../db.js';
 import env from '../config/env.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 const JWT_SECRET = env.JWT_SECRET;
@@ -18,11 +19,20 @@ const publicUser = (user) => ({
   email: user.email,
   name: user.name,
   role: user.role,
+  phone: user.phone || '',
+  phoneCountryCode: user.phone_country_code || user.phoneCountryCode || '',
 });
 
 /* POST /api/auth/register */
 router.post('/register', async (req, res) => {
-  const { email, password, name = '', role = 'user' } = req.body || {};
+  const {
+    email,
+    password,
+    name = '',
+    role = 'user',
+    phone = '',
+    phoneCountryCode = '',
+  } = req.body || {};
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
@@ -36,10 +46,21 @@ router.post('/register', async (req, res) => {
 
   const hashed = bcrypt.hashSync(String(password), 10);
   const info = await db
-    .prepare('INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)')
-    .run(normalizedEmail, hashed, String(name).trim(), role === 'admin' ? 'admin' : 'user');
+    .prepare(
+      'INSERT INTO users (email, password, name, role, phone, phone_country_code) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      normalizedEmail,
+      hashed,
+      String(name).trim(),
+      role === 'admin' ? 'admin' : 'user',
+      String(phone).trim(),
+      String(phoneCountryCode).trim(),
+    );
 
-  const user = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(info.lastInsertRowid);
+  const user = await db
+    .prepare('SELECT id, email, name, role, phone, phone_country_code FROM users WHERE id = ?')
+    .get(info.lastInsertRowid);
 
   return res.status(201).json({ user: publicUser(user), token: signToken(user) });
 });
@@ -60,68 +81,60 @@ router.post('/login', async (req, res) => {
   }
 
   if (role && role !== user.role) {
-    return res.status(401).json({ message: `This account is not a ${role} account.` });
+    return res.status(401).json({
+      message: `This account is registered as a ${user.role}. Switch to ${user.role} and try again.`,
+      actualRole: user.role,
+    });
   }
 
   return res.json({ user: publicUser(user), token: signToken(user) });
 });
 
 /* GET /api/auth/me — current user from token */
-router.get('/me', async (req, res) => {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-
-  if (!token) {
-    return res.status(401).json({ message: 'Authentication token missing.' });
-  }
-
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(payload.id);
-    if (!user) return res.status(401).json({ message: 'User not found.' });
-    return res.json({ user: publicUser(user) });
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid or expired token.' });
-  }
+router.get('/me', authenticate, async (req, res) => {
+  const user = await db
+    .prepare('SELECT id, email, name, role, phone, phone_country_code FROM users WHERE id = ?')
+    .get(req.user.id);
+  if (!user) return res.status(401).json({ message: 'User not found.' });
+  return res.json({ user: publicUser(user) });
 });
 
-/* PUT /api/auth/profile — update current user's name / password (authenticated) */
-router.put('/profile', async (req, res) => {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-
-  if (!token) {
-    return res.status(401).json({ message: 'Authentication token missing.' });
-  }
-
-  let payload;
-  try {
-    payload = jwt.verify(token, JWT_SECRET);
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid or expired token.' });
-  }
-
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
+/* PUT /api/auth/profile — update current user's profile (authenticated) */
+router.put('/profile', authenticate, async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(401).json({ message: 'User not found.' });
 
-  const { name, currentPassword, newPassword } = req.body || {};
+  const { name, currentPassword, newPassword, phone, phoneCountryCode } = req.body || {};
 
   if (newPassword) {
     if (!currentPassword || !bcrypt.compareSync(String(currentPassword), user.password)) {
       return res.status(400).json({ message: 'Current password is incorrect.' });
     }
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters long.' });
+    }
   }
 
   const hashed = newPassword ? bcrypt.hashSync(String(newPassword), 10) : user.password;
-  await db.prepare('UPDATE users SET name = ?, password = ? WHERE id = ?').run(
-    name !== undefined ? String(name) : user.name,
-    hashed,
-    user.id,
-  );
+  const nextName = name !== undefined ? String(name).trim() : user.name;
+  const nextPhone = phone !== undefined ? String(phone).trim() : user.phone || '';
+  const nextCountryCode =
+    phoneCountryCode !== undefined
+      ? String(phoneCountryCode).trim()
+      : user.phone_country_code || '';
 
-  const updated = await db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(user.id);
+  if (!nextName) {
+    return res.status(400).json({ message: 'Name is required.' });
+  }
+
+  await db
+    .prepare('UPDATE users SET name = ?, password = ?, phone = ?, phone_country_code = ? WHERE id = ?')
+    .run(nextName, hashed, nextPhone, nextCountryCode, user.id);
+
+  const updated = await db
+    .prepare('SELECT id, email, name, role, phone, phone_country_code FROM users WHERE id = ?')
+    .get(user.id);
   return res.json({ user: publicUser(updated) });
 });
 
 export default router;
-

@@ -21,12 +21,20 @@ const parsePrefs = (value) => {
 };
 
 const rowToPreferences = (r) => ({
-  theme: r?.theme || 'light',
+  theme: normalizeTheme(r?.theme),
   language: r?.language || 'en-US',
   profileVisibility: r ? !!r.profile_visibility : true,
   activityStatus: r ? !!r.activity_status : false,
   notificationPrefs: parsePrefs(r?.notification_prefs),
 });
+
+function normalizeTheme(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'dark') return 'dark';
+  if (v === 'light') return 'light';
+  if (v === 'auto' || v === 'system') return 'auto';
+  return 'auto';
+}
 
 async function getOrCreate(userId) {
   let row = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
@@ -35,7 +43,7 @@ async function getOrCreate(userId) {
       .prepare(
         'INSERT INTO user_preferences (user_id, theme, language, profile_visibility, activity_status, notification_prefs) VALUES (?, ?, ?, ?, ?, ?)',
       )
-      .run(userId, 'light', 'en-US', 1, 0, JSON.stringify(DEFAULT_NOTIFICATION_PREFS));
+      .run(userId, 'auto', 'en-US', 1, 0, JSON.stringify(DEFAULT_NOTIFICATION_PREFS));
     row = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
   }
   return row;
@@ -52,7 +60,7 @@ router.put('/', authenticate, async (req, res) => {
   const existing = await getOrCreate(req.user.id);
   const body = req.body || {};
 
-  const theme = body.theme ?? existing.theme;
+  const theme = normalizeTheme(body.theme ?? existing.theme);
   const language = body.language ?? existing.language;
   const profileVisibility =
     body.profileVisibility !== undefined ? (body.profileVisibility ? 1 : 0) : existing.profile_visibility;

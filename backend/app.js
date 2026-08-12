@@ -23,7 +23,9 @@ import userPreferencesRoutes from './routes/userPreferences.js';
  */
 export function createApp() {
   const app = express();
-  const CLIENT_ORIGINS = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : true;
+  // In local development, frontend dev server origin can vary. Allow all origins
+  // in development to prevent Axios from failing with generic auth errors.
+  const CLIENT_ORIGINS = env.NODE_ENV === 'development' ? true : env.CORS_ORIGINS.length ? env.CORS_ORIGINS : true;
 
   app.use(
     cors({

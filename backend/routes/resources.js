@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { computeResourceAvailability } from '../utils/resourceAvailability.js';
+import { loadMergedPricing } from '../utils/pricingCalculator.js';
 
 const router = Router();
 
@@ -23,8 +24,12 @@ const rowToResource = (r, availability = null) => {
       ...base,
       available: !!r.available,
       active: !!r.available,
+      canBook: !!r.available,
       isBooked: false,
+      bookedByCurrentUser: false,
+      bookedByOthers: false,
       availabilityStatus: r.available ? 'available' : 'maintenance',
+      unavailableIntervals: [],
       activeBookingId: null,
       activeBookingStatus: null,
     };
@@ -34,8 +39,12 @@ const rowToResource = (r, availability = null) => {
     ...base,
     available: availability.available,
     active: availability.available,
+    canBook: availability.canBook,
     isBooked: availability.isBooked,
+    bookedByCurrentUser: availability.bookedByCurrentUser,
+    bookedByOthers: availability.bookedByOthers,
     availabilityStatus: availability.availabilityStatus,
+    unavailableIntervals: availability.unavailableIntervals || [],
     activeBookingId: availability.activeBookingId,
     activeBookingStatus: availability.activeBookingStatus,
   };
@@ -60,7 +69,7 @@ async function assertValidResourceType(type) {
 async function loadOccupyingBookings() {
   return db
     .prepare(
-      `SELECT id, booking_code, resource_id, resource, date, start_time, end_time, status
+      `SELECT id, booking_code, user_id, resource_id, resource, date, start_time, end_time, status
        FROM bookings
        WHERE status IN ('Pending', 'Confirmed')`,
     )
@@ -83,12 +92,28 @@ function parseAvailabilityWindow(query = {}) {
   };
 }
 
-async function enrichResources(rows, window) {
+async function enrichResources(rows, window, viewerUserId = null) {
   const bookings = await loadOccupyingBookings();
+  const uniqueTypes = [...new Set(rows.map((row) => row.type).filter(Boolean))];
+  const pricingByType = {};
+
+  await Promise.all(
+    uniqueTypes.map(async (type) => {
+      pricingByType[type] = await loadMergedPricing(type);
+    }),
+  );
+
   return rows.map((row) => {
     const related = bookingsForResource(bookings, row);
-    const availability = computeResourceAvailability(row, related, window);
-    return rowToResource(row, availability);
+    const availability = computeResourceAvailability(row, related, window, new Date(), viewerUserId);
+    const mergedPricing = pricingByType[row.type] || {};
+    const resource = rowToResource(row, availability);
+    return {
+      ...resource,
+      hourlyRate: Number(mergedPricing.hourlyRate) || 0,
+      currency: mergedPricing.currency || 'INR',
+      freeFirstHour: !!mergedPricing.freeFirstHour,
+    };
   });
 }
 
@@ -99,7 +124,7 @@ async function enrichResources(rows, window) {
 router.get('/', authenticate, async (req, res) => {
   const rows = await db.prepare('SELECT * FROM resources ORDER BY id').all();
   const window = parseAvailabilityWindow(req.query);
-  const resources = await enrichResources(rows, window);
+  const resources = await enrichResources(rows, window, req.user?.id);
   res.json({ resources, window });
 });
 
@@ -108,7 +133,7 @@ router.get('/:id', authenticate, async (req, res) => {
   const row = await db.prepare('SELECT * FROM resources WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ message: 'Resource not found.' });
   const window = parseAvailabilityWindow(req.query);
-  const [resource] = await enrichResources([row], window);
+  const [resource] = await enrichResources([row], window, req.user?.id);
   res.json({ resource, window });
 });
 

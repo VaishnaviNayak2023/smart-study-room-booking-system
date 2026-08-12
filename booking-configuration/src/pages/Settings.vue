@@ -13,7 +13,17 @@
 
     <div v-if="loading" class="portal-loading"><q-spinner color="primary" size="32px" /> Loading settings…</div>
     <div v-else-if="error" class="portal-error"><div>{{ error }}</div><q-btn unelevated no-caps color="primary" label="Retry" @click="loadSettings" /></div>
-    <div v-else class="settings-grid">
+    <div v-else class="settings-content">
+      <q-card flat bordered class="settings-card appearance-card">
+        <q-card-section>
+          <ThemeSelector
+            :model-value="themeStore.preference"
+            @update:model-value="onThemeChange"
+          />
+        </q-card-section>
+      </q-card>
+
+      <div class="settings-grid">
       <q-card flat bordered class="settings-card">
         <q-card-section>
           <div class="card-title"><q-icon name="hub" /> Booking & Routing Logic</div>
@@ -82,6 +92,7 @@
           </div>
         </q-card-section>
       </q-card>
+      </div>
     </div>
   </q-page>
 </template>
@@ -91,6 +102,11 @@ import { onMounted, reactive, ref } from 'vue';
 import { Notify } from 'quasar';
 import api from '@/services/api';
 import { emitDashboardRefresh } from '@/stores/dashboard-events';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useThemeStore } from '@/stores/theme-store';
+import { CURRENCY_OPTIONS } from '@/utils/currency';
+import ThemeSelector from '@/components/ThemeSelector.vue';
+import type { ThemePreference } from '@/utils/theme';
 
 type SettingsData = {
   systemName: string;
@@ -106,9 +122,11 @@ type SettingsData = {
 const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
+const settingsStore = useSettingsStore();
+const themeStore = useThemeStore();
 const settings = reactive<SettingsData>({
   systemName: '',
-  currency: 'USD ($)',
+  currency: 'INR (Rs.)',
   language: 'English (US)',
   maxHours: 8,
   advanceDays: 30,
@@ -117,9 +135,13 @@ const settings = reactive<SettingsData>({
   emailNotifications: true,
 });
 
-const currencyOptions = ['USD ($)', 'EUR (€)', 'GBP (£)', 'INR (₹)'];
+const currencyOptions = CURRENCY_OPTIONS.map((item) => item.value);
 const languageOptions = ['English (US)', 'English (UK)', 'Spanish', 'French'];
 const nameRules = [(v: string) => !!String(v || '').trim() || 'System name is required.'];
+
+function onThemeChange(preference: ThemePreference) {
+  themeStore.setPreference(preference);
+}
 
 async function loadSettings() {
   loading.value = true;
@@ -129,7 +151,7 @@ async function loadSettings() {
     if (data.settings) {
       Object.assign(settings, {
         systemName: data.settings.systemName || '',
-        currency: data.settings.currency || 'USD ($)',
+        currency: data.settings.currency || 'INR (Rs.)',
         language: data.settings.language || 'English (US)',
         maxHours: Number(data.settings.maxHours) || 8,
         advanceDays: Number(data.settings.advanceDays) || 30,
@@ -153,6 +175,7 @@ async function saveSettings() {
   saving.value = true;
   try {
     await api.put('/settings', { ...settings });
+    await settingsStore.load();
     Notify.create({ type: 'positive', message: 'Settings saved successfully.' });
     emitDashboardRefresh();
   } catch {
@@ -167,21 +190,23 @@ onMounted(() => { void loadSettings(); });
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; }
-.page-header h1 { margin: 0; font-size: clamp(26px, 3vw, 32px); font-weight: 750; }
-.page-header p { margin: 6px 0 0; color: #64748b; max-width: 560px; }
+.page-header h1 { margin: 0; font-size: clamp(26px, 3vw, 32px); font-weight: 750; color: var(--portal-text); }
+.page-header p { margin: 6px 0 0; color: var(--portal-muted); max-width: 560px; }
 .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.primary-btn { background: #1e3a8a; color: #fff; border-radius: 10px; min-height: 40px; padding: 0 16px; }
-.ghost-btn { border-radius: 10px; border-color: #e5e7eb; color: #374151; min-height: 40px; }
+.primary-btn { background: var(--portal-primary); color: var(--portal-on-primary); border-radius: 10px; min-height: 40px; padding: 0 16px; }
+.ghost-btn { border-radius: 10px; border-color: var(--portal-border); color: var(--portal-text-secondary); min-height: 40px; }
+.settings-content { display: flex; flex-direction: column; }
+.appearance-card { margin-bottom: 16px; }
 .settings-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
-.settings-card { border-radius: 14px; border-color: #e5e7eb; }
-.card-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #1e3a8a; }
-.card-sub { margin: 6px 0 0; color: #64748b; font-size: 13px; }
-.pref-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+.settings-card { border-radius: 14px; border-color: var(--portal-border); }
+.card-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: var(--portal-primary); }
+.card-sub { margin: 6px 0 0; color: var(--portal-muted); font-size: 13px; }
+.pref-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--portal-border-subtle); }
 .pref-row:last-of-type { border-bottom: none; }
-.pref-title { font-weight: 600; font-size: 14px; }
-.pref-sub { color: #64748b; font-size: 12px; margin-top: 2px; }
+.pref-title { font-weight: 600; font-size: 14px; color: var(--portal-text); }
+.pref-sub { color: var(--portal-muted); font-size: 12px; margin-top: 2px; }
 .field-block { margin-bottom: 16px; }
-.field-label { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-.field-hint { color: #64748b; font-size: 12px; margin-bottom: 6px; }
+.field-label { font-weight: 600; font-size: 13px; margin-bottom: 2px; color: var(--portal-text); }
+.field-hint { color: var(--portal-muted); font-size: 12px; margin-bottom: 6px; }
 @media (max-width: 900px) { .settings-grid { grid-template-columns: 1fr; } }
 </style>

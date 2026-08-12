@@ -54,7 +54,7 @@ Then open .env and make sure the values look like this:
   MYSQL_ROOT_PASSWORD=change_me_root_password
   MYSQL_PORT=3306
 
-  PORT=5000
+  PORT=5006
   CLIENT_ORIGIN=http://localhost:9000
   CORS_ORIGINS=http://localhost:9000
   DB_HOST=mysql
@@ -71,7 +71,7 @@ Then open .env and make sure the values look like this:
   SEED_ADMIN_PASSWORD=ChangeMe123!
   SEED_USER_PASSWORD=ChangeMe123!
 
-  VITE_API_URL=http://localhost:5000
+  VITE_API_URL=http://localhost:5006
   VITE_APP_NAME=Booking Configuration
   VITE_DEFAULT_CURRENCY=
   FRONTEND_PORT=9000
@@ -99,12 +99,12 @@ This starts:
 
 Access URLs:
 - Frontend: http://localhost:9000
-- Backend: http://localhost:5000
+- Backend: http://localhost:5006
 - Database: localhost:3306
 
 Check backend health:
 
-  curl http://localhost:5000/health
+  curl http://localhost:5006/health
 
 Expected response:
 
@@ -192,15 +192,15 @@ Or with auto-watch:
 
 Expected console output:
 
-  ✅ Booking Configuration backend running on port 5000
+  ✅ Booking Configuration backend running on port 5006
 
 Health check:
 
-  curl http://localhost:5000/health
+  curl http://localhost:5006/health
 
 API base:
 
-  http://localhost:5000/api
+  http://localhost:5006/api
 
 ------------------------------------------------------------
 5) RUN FRONTEND LOCALLY (WITHOUT DOCKER)
@@ -225,9 +225,9 @@ Open this in the browser:
 
 The frontend is configured to call the backend at:
 
-  VITE_API_URL=http://localhost:5000
+  VITE_API_URL=http://localhost:5006
 
-The app will use /api requests and the backend runs on port 5000.
+The app will use /api requests and the backend runs on port 5006.
 
 ------------------------------------------------------------
 6) RUN BOTH TOGETHER (LOCAL DEVELOPMENT)
@@ -254,7 +254,7 @@ Then open:
 
 Backend API will be available at:
 
-  http://localhost:5000/api
+  http://localhost:5006/api
 
 ------------------------------------------------------------
 7) HOW TO ACCESS THE DATABASE
@@ -312,15 +312,15 @@ Use:
 ------------------------------------------------------------
 Backend root:
 
-  http://localhost:5000/
+  http://localhost:5006/
 
 Backend API root:
 
-  http://localhost:5000/api
+  http://localhost:5006/api
 
 Backend health:
 
-  http://localhost:5000/health
+  http://localhost:5006/health
 
 Frontend:
 
@@ -329,7 +329,7 @@ Frontend:
 If you want to test login from PowerShell:
 
   $body = @{ email = 'admin@local.test'; password = 'ChangeMe123!' } | ConvertTo-Json
-  Invoke-RestMethod -Uri http://localhost:5000/api/auth/login -Method Post -ContentType 'application/json' -Body $body
+  Invoke-RestMethod -Uri http://localhost:5006/api/auth/login -Method Post -ContentType 'application/json' -Body $body
 
 ------------------------------------------------------------
 9) USEFUL COMMON COMMANDS
@@ -397,8 +397,8 @@ Solution:
 
 Problem: frontend cannot reach backend
 Solution:
-- Confirm backend is running on port 5000
-- Confirm VITE_API_URL=http://localhost:5000 in .env
+- Confirm backend is running on port 5006
+- Confirm VITE_API_URL=http://localhost:5006 in .env
 - Confirm the browser is reaching localhost:9000 and the frontend is not pointing at a stale URL
 
 Problem: database is empty

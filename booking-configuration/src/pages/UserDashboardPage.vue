@@ -140,7 +140,7 @@ import ModifyBookingDialog from '@/components/user/ModifyBookingDialog.vue';
 import { useStudyroomStore } from '@/stores/studyroom-store';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 import { useNotificationsStore } from '@/stores/notifications-store';
-import { appConfig } from '@/config/app';
+import { useSettingsStore } from '@/stores/settings-store';
 
 type UpcomingBooking = {
   id: string;
@@ -171,6 +171,7 @@ const router = useRouter();
 const studyroomStore = useStudyroomStore();
 const dashboardEvents = useDashboardEvents();
 const notificationsStore = useNotificationsStore();
+const settingsStore = useSettingsStore();
 
 const loading = ref(true);
 const error = ref('');
@@ -242,12 +243,7 @@ const quickActions = [
 ];
 
 function formatMoney(value: number) {
-  const currency = appConfig.defaultCurrency || 'USD';
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
+  return settingsStore.formatMoney(value);
 }
 
 function formatDate(value?: string) {
@@ -333,12 +329,12 @@ onUnmounted(() => {
   margin: 0;
   font-size: clamp(24px, 3vw, 30px);
   font-weight: 700;
-  color: #111827;
+  color: var(--portal-text);
 }
 
 .welcome-subtitle {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 14px;
 }
 
@@ -351,8 +347,8 @@ onUnmounted(() => {
 
 .stat-card {
   border-radius: 14px;
-  border-color: #e5e7eb;
-  background: #fff;
+  border-color: var(--portal-border);
+  background: var(--portal-card);
 }
 
 .stat-header {
@@ -362,7 +358,7 @@ onUnmounted(() => {
 }
 
 .stat-label {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -374,25 +370,25 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eef2ff;
-  color: #1e3a8a;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
 }
 
 .stat-value {
   margin-top: 14px;
   font-size: 28px;
   font-weight: 700;
-  color: #111827;
+  color: var(--portal-text);
 }
 
 .stat-sub {
   margin-top: 6px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 
 .stat-sub.positive {
-  color: #16a34a;
+  color: var(--portal-success);
 }
 
 .main-grid {
@@ -404,7 +400,7 @@ onUnmounted(() => {
 .section-title {
   font-size: 15px;
   font-weight: 700;
-  color: #111827;
+  color: var(--portal-text);
   margin-bottom: 12px;
 }
 
@@ -427,29 +423,29 @@ onUnmounted(() => {
 }
 
 .status-badge.is-confirmed {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--portal-status-confirmed-bg);
+  color: var(--portal-status-confirmed-text);
 }
 
 .status-badge.is-pending {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--portal-status-pending-bg);
+  color: var(--portal-status-pending-text);
 }
 
 .status-badge.is-completed {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--portal-summary-bg);
+  color: var(--portal-text-secondary);
 }
 
 .upcoming-card {
   border-radius: 14px;
   overflow: hidden;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
 }
 
 .upcoming-media {
   height: 180px;
-  background: #e2e8f0;
+  background: var(--portal-image-bg);
 }
 
 .upcoming-media :deep(.q-img),
@@ -461,7 +457,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1e3a8a;
+  color: var(--portal-primary);
   background: linear-gradient(135deg, #e0e7ff, #f8fafc);
 }
 
@@ -476,7 +472,7 @@ onUnmounted(() => {
 
 .upcoming-meta {
   margin-top: 4px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 13px;
 }
 
@@ -489,7 +485,7 @@ onUnmounted(() => {
 
 .upcoming-schedule .label {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--portal-muted);
 }
 
 .upcoming-schedule .value {
@@ -505,20 +501,20 @@ onUnmounted(() => {
 }
 
 .modify-btn {
-  background: #1e3a8a;
-  color: #fff;
+  background: var(--portal-primary);
+  color: var(--portal-on-primary);
   border-radius: 10px;
 }
 
 .cancel-btn {
-  border-color: #e5e7eb;
-  color: #475569;
+  border-color: var(--portal-border);
+  color: var(--portal-text-secondary);
   border-radius: 10px;
 }
 
 .action-card {
   border-radius: 12px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
   margin-bottom: 12px;
 }
 
@@ -535,8 +531,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eef2ff;
-  color: #1e3a8a;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
 }
 
 .action-title {
@@ -547,7 +543,7 @@ onUnmounted(() => {
 .action-desc {
   margin-top: 2px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 
 .cancel-details {
@@ -556,8 +552,8 @@ onUnmounted(() => {
   align-items: center;
   padding: 12px;
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border: 1px solid var(--portal-border);
+  background: var(--portal-muted-bg);
 }
 
 .cancel-details__title {
@@ -566,7 +562,7 @@ onUnmounted(() => {
 
 .cancel-details__meta {
   font-size: 12px;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 
 @media (max-width: 1000px) {

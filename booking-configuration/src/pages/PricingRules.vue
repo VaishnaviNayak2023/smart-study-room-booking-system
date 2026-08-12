@@ -1,654 +1,373 @@
-<template>
-  <q-page class="pricing-page">
-    <!-- =====================================================
-         TOP BAR
-    ====================================================== -->
-
-    <div class="top-toolbar">
-      <q-select
-        v-model="selectedPricingContext"
-        :options="pricingContexts"
-        option-label="label"
-        option-value="value"
-        emit-value
-        map-options
-        dense
-        outlined
-        class="context-select"
-      />
-
-      <div class="toolbar-actions">
-        <q-btn flat round dense icon="notifications_none" class="toolbar-icon" />
-
-        <q-btn flat round dense icon="help_outline" class="toolbar-icon" />
-
-        <q-avatar size="27px" class="admin-avatar">
-          <img src="https://i.pravatar.cc/100?img=12" />
-        </q-avatar>
-      </div>
+﻿<template>
+  <q-page class="portal-page pricing-page">
+    <div v-if="pageLoading" class="portal-loading q-py-xl">
+      <q-spinner color="primary" size="36px" />
+      Loading pricing configuration…
     </div>
-
-    <!-- =====================================================
-         PAGE HEADER
-    ====================================================== -->
-
-    <div class="page-header">
+    <div v-else-if="pageError" class="portal-error q-py-xl">
+      <q-icon name="error_outline" size="32px" color="negative" />
+      <div>{{ pageError }}</div>
+      <q-btn unelevated no-caps color="primary" label="Retry" @click="loadPricing" />
+    </div>
+    <template v-else>
+    <!-- Page header -->
+    <div class="pricing-header">
       <div>
-        <div class="page-title">Pricing Rules Configuration</div>
-
-        <div class="page-description">
+        <h1 class="pricing-title">Pricing Rules Configuration</h1>
+        <p class="pricing-subtitle">
           Manage base rates, taxes, settings, and global modifiers for {{ selectedContextLabel }}.
+        </p>
+        <div class="booking-system-row">
+          <span class="toolbar-label">Booking System</span>
+          <q-select
+            v-model="selectedPricingContext"
+            :options="pricingContexts"
+            option-label="label"
+            option-value="value"
+            emit-value
+            map-options
+            dense
+            outlined
+            class="booking-system-select"
+          />
         </div>
       </div>
-
       <div class="header-actions">
-        <q-btn
-          outline
-          no-caps
-          label="Discard Changes"
-          class="discard-button"
-          @click="discardChanges"
-        />
-
-        <q-btn
-          unelevated
-          no-caps
-          color="primary"
-          icon="save"
-          label="Save Configuration"
-          class="save-button"
-          @click="saveConfiguration"
-        />
+        <q-btn outline no-caps color="primary" label="Discard Changes" @click="discardChanges" />
+        <q-btn unelevated no-caps color="primary" icon="save" label="Save Configuration" @click="saveConfiguration" />
       </div>
     </div>
 
-    <!-- =====================================================
-         GENERAL BASE PRICING
-    ====================================================== -->
-
-    <template v-if="selectedPricingContext === 'general'">
-      <div class="pricing-layout">
-        <!-- LEFT -->
-        <div class="pricing-main">
-          <!-- Base Rate -->
-          <q-card flat bordered class="pricing-card">
-            <q-card-section>
-              <div class="card-title-row">
-                <div class="card-title-icon purple">
-                  <q-icon name="description" />
-                </div>
-
-                <div class="card-title">Base Rate Settings</div>
+    <!-- Pricing Rules â€” always visible -->
+    <q-card flat bordered class="panel-card rules-panel">
+      <q-card-section>
+        <div class="panel-head">
+          <div class="panel-head-left">
+            <div class="panel-icon green"><q-icon name="sell" size="18px" /></div>
+            <div>
+              <div class="panel-title">
+                {{ selectedPricingContext === 'general' ? 'Global Discount Rules' : 'Pricing Rules' }}
               </div>
-
-              <q-separator class="card-separator" />
-
-              <div class="form-grid">
-                <div>
-                  <div class="field-label">Default Hourly Rate ($)</div>
-
-                  <q-input v-model="baseRate" outlined dense prefix="$" class="pricing-input" />
-
-                  <div class="field-help">Applied if no specific tier rule exists.</div>
-                </div>
-
-                <div>
-                  <div class="field-label">Minimum Booking Duration</div>
-
-                  <q-select
-                    v-model="minimumDuration"
-                    :options="durationOptions"
-                    outlined
-                    dense
-                    class="pricing-input"
-                  />
-                </div>
-              </div>
-
-              <div class="field-label q-mt-md">Currency Setup</div>
-
-              <q-option-group
-                v-model="currency"
-                :options="currencyOptions"
-                color="primary"
-                inline
-                dense
-                class="currency-options"
-              />
-            </q-card-section>
-          </q-card>
-
-          <!-- Global Discount Rules -->
-          <q-card flat bordered class="pricing-card discount-card">
-            <q-card-section class="no-padding">
-              <div class="discount-header">
-                <div class="card-title-row">
-                  <div class="card-title-icon green">
-                    <q-icon name="sell" />
-                  </div>
-
-                  <div class="card-title">Global Discount Rules</div>
-                </div>
-
-                <q-btn
-                  unelevated
-                  no-caps
-                  color="primary"
-                  icon="add"
-                  label="Add Rule"
-                  size="sm"
-                  class="add-rule-button"
-                  @click="addDiscountRule"
-                />
-              </div>
-
-              <div class="rules-table">
-                <div class="rules-head">
-                  <div>RULE NAME</div>
-                  <div>CONDITION</div>
-                  <div>MODIFIER</div>
-                  <div>STATUS</div>
-                  <div>ACTIONS</div>
-                </div>
-
-                <div v-for="rule in discountRules" :key="rule.id" class="rules-row">
-                  <div class="rule-name">
-                    {{ rule.name }}
-                  </div>
-
-                  <div>
-                    {{ rule.condition }}
-                  </div>
-
-                  <div
-                    :class="{
-                      'discount-value': rule.active,
-                    }"
-                  >
-                    {{ rule.modifier }}
-                  </div>
-
-                  <div>
-                    <q-badge :class="rule.active ? 'status-active' : 'status-inactive'">
-                      {{ rule.active ? 'ACTIVE' : 'INACTIVE' }}
-                    </q-badge>
-                  </div>
-
-                  <div class="rule-actions">
-                    <q-btn flat round dense icon="edit" size="sm" @click="editDiscountRule(rule)" />
-                  </div>
-                </div>
-              </div>
-            </q-card-section>
-          </q-card>
+              <div class="panel-subtitle">{{ selectedRulesDescription }}</div>
+            </div>
+          </div>
+          <q-btn
+            unelevated
+            no-caps
+            color="primary"
+            icon="add"
+            :label="selectedPricingContext === 'general' ? 'Add Rule' : 'Add Modifier'"
+            size="sm"
+            @click="addRuleForSelectedContext"
+          />
         </div>
 
-        <!-- RIGHT -->
-        <div class="pricing-side">
-          <!-- Tax -->
-          <q-card flat bordered class="pricing-card">
-            <q-card-section>
-              <div class="card-title-row">
-                <div class="card-title-icon red">
-                  <q-icon name="receipt_long" />
-                </div>
-
-                <div class="card-title">Tax Configurations</div>
-              </div>
-
-              <div class="toggle-row">
-                <span> Apply Standard Tax Rate </span>
-
-                <q-toggle v-model="applyTax" color="primary" dense />
-              </div>
-
-              <div class="field-label">Tax Rate (%)</div>
-
-              <q-input v-model="taxRate" outlined dense suffix="%" class="pricing-input" />
-
-              <div class="field-label q-mt-md">Tax Label (Shown on Invoice)</div>
-
-              <q-input v-model="taxLabel" outlined dense class="pricing-input" />
-
-              <div class="info-box q-mt-md">
-                <q-icon name="info_outline" size="13px" />
-
-                <span>
-                  Tax is applied to the final amount after all global discount rules are calculated.
-                </span>
-              </div>
-            </q-card-section>
-          </q-card>
-
-          <!-- Simulation -->
-          <q-card flat class="simulation-card">
-            <q-card-section>
-              <div class="simulation-title">Pricing Simulation</div>
-
-              <div class="simulation-description">
-                Preview how current rules affect a standard 2-hour booking.
-              </div>
-
-              <div class="simulation-body">
-                <div class="simulation-row">
-                  <span> Base Rate (2 hrs x ${{ baseRate }}) </span>
-
-                  <strong>
-                    {{ formatCurrency(simulation.base) }}
-                  </strong>
-                </div>
-
-                <div class="simulation-row">
-                  <span> Discounts </span>
-
-                  <strong class="negative"> -{{ formatCurrency(simulation.discount) }} </strong>
-                </div>
-
-                <q-separator />
-
-                <div class="simulation-row">
-                  <span>Subtotal</span>
-
-                  <strong>
-                    {{ formatCurrency(simulation.subtotal) }}
-                  </strong>
-                </div>
-
-                <div class="simulation-row">
-                  <span> Tax ({{ taxRate }}%) </span>
-
-                  <strong>
-                    {{ formatCurrency(simulation.tax) }}
-                  </strong>
-                </div>
-
-                <q-separator />
-
-                <div class="simulation-row total">
-                  <span>Total</span>
-
-                  <strong>
-                    {{ formatCurrency(simulation.total) }}
-                  </strong>
-                </div>
-              </div>
-            </q-card-section>
-          </q-card>
-        </div>
-      </div>
-    </template>
-
-    <!-- =====================================================
-         RENTAL VEHICLE
-    ====================================================== -->
-
-    <template v-else-if="selectedPricingContext === 'vehicle'">
-      <div class="vehicle-layout">
-        <div class="vehicle-main">
-          <!-- Vehicle Rates -->
-          <q-card flat bordered class="pricing-card">
-            <q-card-section class="no-padding">
-              <div class="vehicle-card-header">
-                <div class="card-title-row">
-                  <div class="card-title-icon purple">
-                    <q-icon name="directions_car" />
-                  </div>
-
-                  <div>
-                    <div class="card-title">Base Rate Structure</div>
-
-                    <div class="card-subtitle">Vehicle-specific hourly and daily pricing.</div>
-                  </div>
-                </div>
-
-                <q-btn flat no-caps label="Edit Matrix" color="primary" size="sm" />
-              </div>
-
-              <div class="vehicle-table">
-                <div class="vehicle-table-head">
-                  <div>VEHICLE TYPE</div>
-                  <div>HOURLY RATE</div>
-                  <div>DAILY RATE<br />(24H)</div>
-                  <div>WEEKLY DISCOUNT</div>
-                  <div>STATUS</div>
-                </div>
-
-                <div v-for="vehicle in vehicleRates" :key="vehicle.id" class="vehicle-table-row">
-                  <div class="vehicle-name">
-                    <div class="vehicle-icon">
-                      <q-icon :name="vehicle.icon" />
-                    </div>
-
-                    <span>
-                      {{ vehicle.name }}
-                    </span>
-                  </div>
-
-                  <div>
-                    {{ vehicle.hourly }}
-                  </div>
-
-                  <div>
-                    {{ vehicle.daily }}
-                  </div>
-
-                  <div class="green-text">
-                    {{ vehicle.discount }}
-                  </div>
-
-                  <div>
-                    <q-badge class="status-active">
-                      {{ vehicle.status }}
-                    </q-badge>
-                  </div>
-                </div>
-              </div>
-            </q-card-section>
-          </q-card>
-
-          <div class="vehicle-bottom-grid">
-            <!-- Mileage -->
-            <q-card flat bordered class="pricing-card">
-              <q-card-section>
-                <div class="small-card-header">
-                  <div class="card-title-row">
-                    <div class="card-title-icon purple">
-                      <q-icon name="speed" />
-                    </div>
-
-                    <div class="card-title">Mileage Overage</div>
-                  </div>
-
-                  <q-toggle v-model="mileageEnabled" color="primary" dense />
-                </div>
-
-                <p class="small-description">
-                  Applies an additional charge per mile once the daily allowance is exceeded.
-                </p>
-
-                <div class="mini-field">
-                  <span>Daily Allowance</span>
-                  <strong>150 Miles</strong>
-                </div>
-
-                <div class="mini-field">
-                  <span>Overage Rate</span>
-                  <strong>$0.25 / Mile</strong>
-                </div>
-
-                <q-btn
-                  outline
-                  no-caps
-                  label="Configure Limits"
-                  color="primary"
-                  class="full-width mini-button"
-                />
-              </q-card-section>
-            </q-card>
-
-            <!-- Insurance -->
-            <q-card flat bordered class="pricing-card">
-              <q-card-section>
-                <div class="card-title-row">
-                  <div class="card-title-icon green">
-                    <q-icon name="shield" />
-                  </div>
-
-                  <div class="card-title">Insurance Packages</div>
-                </div>
-
-                <p class="small-description">
-                  Mandatory and optional insurance tiers applied to base rental cost.
-                </p>
-
-                <div class="insurance-row">
-                  <span>● Basic (Required)</span>
-                  <strong>+$12/day</strong>
-                </div>
-
-                <div class="insurance-row">
-                  <span>● Comprehensive</span>
-                  <strong>+$28/day</strong>
-                </div>
-
-                <div class="insurance-row muted">
-                  <span>● Premium Waiver</span>
-                  <span>Not Configured</span>
-                </div>
-
-                <q-btn
-                  outline
-                  no-caps
-                  label="Manage Tiers"
-                  color="primary"
-                  class="full-width mini-button"
-                />
-              </q-card-section>
-            </q-card>
+        <div class="rules-table">
+          <div class="rules-table-head">
+            <span>RULE NAME</span>
+            <span>CONDITION</span>
+            <span>MODIFIER</span>
+            <span>STATUS</span>
+            <span>ACTIONS</span>
+          </div>
+          <div v-if="!selectedRuleSet.length" class="rules-empty">
+            No pricing rules configured for {{ selectedContextLabel }} yet.
+          </div>
+          <div v-for="rule in selectedRuleSet" :key="rule.id" class="rules-table-row">
+            <span class="rule-name">{{ rule.name }}</span>
+            <span class="rule-condition">{{ rule.condition }}</span>
+            <span :class="['rule-modifier', ruleModifierClass(rule.modifier)]">{{ rule.modifier }}</span>
+            <span class="rule-status">
+              <q-toggle v-model="rule.active" color="primary" dense size="sm" @update:model-value="refreshSimulation" />
+              <q-badge :class="rule.active ? 'badge-active' : 'badge-inactive'">
+                {{ rule.active ? 'ACTIVE' : 'INACTIVE' }}
+              </q-badge>
+            </span>
+            <span class="rule-actions">
+              <q-btn flat round dense icon="edit" size="sm" @click="openRuleEditorForSelectedContext(rule)" />
+              <q-btn flat round dense icon="delete" color="negative" size="sm" @click="removeRuleFromSelectedContext(rule)" />
+            </span>
           </div>
         </div>
+      </q-card-section>
+    </q-card>
 
-        <!-- Seasonal -->
-        <div>
-          <q-card flat bordered class="pricing-card seasonal-card">
-            <q-card-section>
-              <div class="card-title-row">
-                <div class="card-title-icon purple">
-                  <q-icon name="calendar_month" />
-                </div>
+    <!-- Configuration grid -->
+    <div class="config-grid">
+      <!-- LEFT COLUMN -->
+      <div class="config-main">
+        <!-- General: Base Rate Settings -->
+        <q-card v-if="selectedPricingContext === 'general'" flat bordered class="panel-card">
+          <q-card-section>
+            <div class="panel-head compact">
+              <div class="panel-head-left">
+                <div class="panel-icon purple"><q-icon name="payments" size="18px" /></div>
+                <div class="panel-title">Base Rate Settings</div>
+              </div>
+            </div>
+            <q-separator class="q-my-md" />
+            <div class="field-grid">
+              <div>
+                <label class="field-label">Default Hourly Rate ({{ ratePrefix }})</label>
+                <q-input v-model="baseRate" outlined dense :prefix="ratePrefix" />
+                <div class="field-hint">Applied if no specific tier rule exists.</div>
+              </div>
+              <div>
+                <label class="field-label">Minimum Booking Duration</label>
+                <q-select v-model="minimumDuration" :options="durationOptions" outlined dense />
+              </div>
+            </div>
+            <div class="field-hint q-mt-md">
+              Currency is configured in <strong>System Settings</strong> (currently {{ settingsStore.currencyLabel }}).
+            </div>
+          </q-card-section>
+        </q-card>
 
+        <!-- Context: Base Pricing -->
+        <q-card v-else flat bordered class="panel-card">
+          <q-card-section>
+            <div class="panel-head compact">
+              <div class="panel-head-left">
+                <div class="panel-icon purple"><q-icon name="payments" size="18px" /></div>
                 <div>
-                  <div class="card-title">Seasonal Surcharges</div>
-
-                  <div class="card-subtitle">Active multipliers and date-specific rules.</div>
+                  <div class="panel-title">Base Pricing</div>
+                  <div class="panel-subtitle">Standard rates and peak windows for {{ selectedContextLabel }}</div>
                 </div>
               </div>
-
-              <div v-for="season in seasonalRules" :key="season.id" class="season-rule">
-                <div class="season-header">
-                  <strong>
-                    {{ season.name }}
-                  </strong>
-
-                  <q-badge :class="season.active ? 'priority-high' : 'status-inactive'">
-                    {{ season.status }}
-                  </q-badge>
-                </div>
-
-                <div class="season-date">
-                  {{ season.date }}
-                </div>
-
-                <div class="season-adjustment">
-                  <span>Base Rate Adjust</span>
-
-                  <strong>
-                    {{ season.adjustment }}
-                  </strong>
-                </div>
+              <q-badge :class="Number(studyHourlyRate) > 0 ? 'badge-active' : 'badge-inactive'">Active</q-badge>
+            </div>
+            <q-separator class="q-my-md" />
+            <div class="field-grid">
+              <div>
+                <label class="field-label">Standard Hourly Rate ({{ ratePrefix }})</label>
+                <q-input v-model="studyHourlyRate" outlined dense :prefix="ratePrefix" />
               </div>
-
-              <q-btn
-                flat
-                no-caps
-                icon="add"
-                label="Add Surcharge Rule"
-                color="primary"
-                class="full-width"
-              />
-            </q-card-section>
-          </q-card>
-        </div>
-      </div>
-    </template>
-
-    <!-- =====================================================
-         STUDY ROOM
-    ====================================================== -->
-
-    <template v-else>
-      <div class="study-layout">
-        <div class="study-main">
-          <q-card flat bordered class="pricing-card">
-            <q-card-section>
-              <div class="study-card-header">
-                <div class="card-title-row">
-                  <div class="card-title-icon purple">
-                    <q-icon name="payments" />
-                  </div>
-
-                  <div class="card-title">Base Pricing & Tiers</div>
-                </div>
-
-                <q-badge class="status-active"> Active </q-badge>
-              </div>
-
-              <q-separator class="card-separator" />
-
-              <div class="form-grid">
+              <div class="toggle-field">
                 <div>
-                  <div class="field-label">Standard Hourly Rate ($)</div>
-
-                  <q-input v-model="studyHourlyRate" outlined dense class="pricing-input" />
+                  <label class="field-label">Free First Hour</label>
+                  <div class="field-hint">Waive fee for first 60 mins</div>
                 </div>
-
-                <div class="free-hour-setting">
-                  <div>
-                    <div class="field-label">Free First Hour</div>
-
-                    <div class="field-help">Waive fee for first 60 mins</div>
-                  </div>
-
-                  <q-toggle v-model="freeFirstHour" color="primary" />
-                </div>
+                <q-toggle v-model="freeFirstHour" color="primary" />
               </div>
+            </div>
 
-              <!-- Peak windows -->
-              <div class="field-label q-mt-lg">Peak Hour Surcharges</div>
-
-              <div class="peak-window">
-                <div class="peak-head">
+            <div class="peak-section q-mt-lg">
+              <div class="peak-section-title">Peak Hour Surcharges</div>
+              <div class="peak-table">
+                <div class="peak-table-head">
                   <span>TIME RANGE</span>
                   <span>DAYS</span>
                   <span>MULTIPLIER</span>
                 </div>
-
-                <div class="peak-row">
-                  <q-input v-model="peakStart" type="time" dense outlined />
-
-                  <span>→</span>
-
-                  <q-input v-model="peakEnd" type="time" dense outlined />
-
-                  <q-select
-                    v-model="peakDays"
-                    :options="['Mon - Fri', 'Every Day', 'Weekends']"
-                    dense
-                    outlined
-                  />
-
-                  <span>x</span>
-
-                  <q-input v-model="peakMultiplier" dense outlined />
+                <div class="peak-table-row">
+                  <div class="peak-times">
+                    <q-input v-model="peakStart" type="time" dense outlined />
+                    <span>to</span>
+                    <q-input v-model="peakEnd" type="time" dense outlined />
+                  </div>
+                  <q-select v-model="peakDays" :options="peakDayOptions" dense outlined emit-value map-options />
+                  <q-input v-model="peakMultiplier" dense outlined prefix="Ã—" />
                 </div>
-
-                <q-btn flat no-caps color="primary" icon="add" label="Add Peak Window" size="sm" />
               </div>
-            </q-card-section>
-          </q-card>
-        </div>
+            </div>
+          </q-card-section>
+        </q-card>
 
-        <!-- Right side -->
-        <div class="study-side">
-          <!-- Role discounts -->
-          <q-card flat bordered class="pricing-card">
-            <q-card-section>
-              <div class="card-title-row">
-                <div class="card-title-icon purple">
-                  <q-icon name="sell" />
-                </div>
-
-                <div class="card-title">Role Discounts</div>
+        <!-- Context: Base Hourly Rates per resource -->
+        <q-card v-if="selectedPricingContext !== 'general'" flat bordered class="panel-card q-mt-md">
+          <q-card-section>
+            <div class="panel-head compact">
+              <div class="panel-head-left">
+                <div class="panel-icon blue"><q-icon name="meeting_room" size="18px" /></div>
+                <div class="panel-title">Base Hourly Rates</div>
               </div>
+            </div>
+            <q-separator class="q-my-md" />
+            <div v-if="!contextResources.length" class="field-hint">No resources found. Create rooms in Manage Resources.</div>
+            <div v-for="resource in contextResources" :key="resource.id" class="rate-row">
+              <div>
+                <strong>{{ resource.name }}</strong>
+                <div class="field-hint">Shared hourly rate for all resources in this booking system</div>
+              </div>
+              <q-input
+                :model-value="studyHourlyRate"
+                outlined
+                dense
+                :prefix="ratePrefix"
+                suffix="/ hr"
+                readonly
+                class="rate-input"
+              />
+            </div>
+          </q-card-section>
+        </q-card>
+      </div>
 
-              <q-separator class="card-separator" />
+      <!-- RIGHT COLUMN -->
+      <div class="config-aside">
+        <!-- Tax -->
+        <q-card flat bordered class="panel-card">
+          <q-card-section>
+            <div class="panel-head compact">
+              <div class="panel-head-left">
+                <div class="panel-icon red"><q-icon name="receipt_long" size="18px" /></div>
+                <div class="panel-title">Tax Configurations</div>
+              </div>
+            </div>
+            <div class="toggle-field q-mt-md">
+              <span>Apply Standard Tax Rate</span>
+              <q-toggle v-model="applyTax" color="primary" dense />
+            </div>
+            <label class="field-label q-mt-md">Tax Rate (%)</label>
+            <q-input v-model="taxRate" outlined dense suffix="%" class="q-mt-xs" />
+            <label class="field-label q-mt-md">Tax Label (Shown on Invoice)</label>
+            <q-input v-model="taxLabel" outlined dense class="q-mt-xs" />
+            <div class="info-note q-mt-md">
+              <q-icon name="info_outline" size="16px" />
+              Tax is applied to the final amount after all discount rules are calculated.
+            </div>
+          </q-card-section>
+        </q-card>
 
-              <div v-for="role in roleDiscounts" :key="role.role" class="role-row">
+        <!-- Role Discounts (context only) -->
+        <q-card v-if="selectedPricingContext !== 'general'" flat bordered class="panel-card q-mt-md">
+          <q-card-section>
+            <div class="panel-head compact">
+              <div class="panel-head-left">
+                <div class="panel-icon green"><q-icon name="loyalty" size="18px" /></div>
                 <div>
-                  <strong>{{ role.role }}</strong>
-
-                  <span> Applied to base rate </span>
-                </div>
-
-                <div class="percentage-input">
-                  <q-input v-model="role.discount" dense outlined suffix="%" />
+                  <div class="panel-title">Role Discounts</div>
+                  <div class="panel-subtitle">Applied to base rate by user type</div>
                 </div>
               </div>
-            </q-card-section>
-          </q-card>
+              <q-badge class="badge-active">{{ activeRoleDiscountCount }} Active</q-badge>
+            </div>
+            <q-separator class="q-my-md" />
+            <div v-for="(item, index) in roleDiscounts" :key="`role-${index}`" class="role-discount-row">
+              <div class="role-discount-fields">
+                <q-input v-model="item.role" outlined dense label="Role" placeholder="e.g. student" />
+                <q-input v-model="item.discount" outlined dense label="Discount %" type="number" min="0" max="100" suffix="%" />
+              </div>
+              <q-btn flat round dense icon="delete" color="negative" @click="removeRoleDiscount(index)" />
+            </div>
+            <q-btn flat no-caps icon="add" label="Add Role Discount" color="primary" size="sm" class="q-mt-sm" @click="addRoleDiscount" />
+          </q-card-section>
+        </q-card>
 
-          <!-- Cancellation -->
-          <q-card flat bordered class="pricing-card q-mt-md">
-            <q-card-section>
-              <div class="card-title-row">
-                <div class="card-title-icon red">
-                  <q-icon name="cancel" />
+        <!-- Pricing Simulation -->
+        <q-card flat class="simulation-panel q-mt-md">
+          <q-card-section>
+            <div class="simulation-head">
+              <q-icon name="calculate" size="20px" />
+              <div>
+                <div class="simulation-title">Pricing Simulation</div>
+                <div class="simulation-sub">
+                  {{ selectedPricingContext === 'general'
+                    ? 'Preview how current rules affect a standard booking.'
+                    : 'Test rules with resource, user type, and schedule.' }}
                 </div>
-
-                <div class="card-title">Cancellation Charges</div>
               </div>
+            </div>
 
-              <div class="field-help q-mt-sm">
-                Penalties based on notice given prior to booking start time.
+            <q-select
+              v-if="simulationResourceOptions.length"
+              v-model="simulationResourceId"
+              outlined
+              dense
+              dark
+              label="Select Resource"
+              :options="simulationResourceOptions"
+              emit-value
+              map-options
+              class="q-mt-md sim-input"
+              @update:model-value="refreshSimulation"
+            />
+            <q-select
+              v-model="simulationUserRole"
+              outlined
+              dense
+              dark
+              label="User Type"
+              :options="simulationRoleOptions"
+              emit-value
+              map-options
+              class="q-mt-sm sim-input"
+              @update:model-value="refreshSimulation"
+            />
+            <div class="row q-col-gutter-sm q-mt-sm">
+              <div class="col-12">
+                <q-input v-model="simulationDate" outlined dense dark type="date" label="Date" class="sim-input" @update:model-value="refreshSimulation" />
               </div>
+              <div class="col-6">
+                <q-input v-model="simulationStartTime" outlined dense dark type="time" label="Start" class="sim-input" @update:model-value="refreshSimulation" />
+              </div>
+              <div class="col-6">
+                <q-input v-model="simulationEndTime" outlined dense dark type="time" label="End" class="sim-input" @update:model-value="refreshSimulation" />
+              </div>
+            </div>
 
+            <div v-if="simulationLoading" class="sim-loading"><q-spinner color="white" size="28px" /></div>
+            <div v-else-if="simulationError" class="sim-error">{{ simulationError }}</div>
+            <div v-else-if="simulationBreakdown" class="sim-breakdown q-mt-md">
               <div
-                v-for="charge in cancellationCharges"
-                :key="charge.label"
-                class="cancellation-row"
+                v-for="(item, index) in simulationBreakdown.lineItems.filter((l) => l.type !== 'tax')"
+                :key="index"
+                class="sim-line"
               >
-                <span>{{ charge.label }}</span>
-                <strong>{{ charge.value }}</strong>
+                <span>{{ item.description }}</span>
+                <strong :class="item.amount < 0 ? 'line-discount' : item.type === 'surcharge' ? 'line-surcharge' : ''">
+                  {{ formatCurrency(item.amount) }}
+                </strong>
               </div>
+              <q-separator dark class="q-my-sm" />
+              <div class="sim-line"><span>Subtotal</span><strong>{{ formatCurrency(simulationBreakdown.subtotal) }}</strong></div>
+              <div class="sim-line"><span>Tax ({{ simulationBreakdown.taxRate }}%)</span><strong>{{ formatCurrency(simulationBreakdown.tax) }}</strong></div>
+              <div class="sim-total">
+                <span>Estimated Total</span>
+                <strong>{{ formatCurrency(simulationBreakdown.total) }}</strong>
+              </div>
+            </div>
+            <div v-else class="sim-error q-mt-md">Configure rates and create a resource to preview pricing.</div>
 
-              <q-btn flat no-caps label="Edit Penalty Tiers" color="primary" size="sm" />
-            </q-card-section>
-          </q-card>
-        </div>
-      </div>
-    </template>
-
-    <!-- =====================================================
-         BOTTOM SAVE BAR
-    ====================================================== -->
-
-    <div class="bottom-save-bar">
-      <div class="change-message">
-        <q-icon name="info_outline" />
-
-        <span> Changes made to base rates will not affect currently active bookings. </span>
-      </div>
-
-      <div class="bottom-actions">
-        <q-btn
-          outline
-          no-caps
-          label="Discard Changes"
-          class="discard-button"
-          @click="discardChanges"
-        />
-
-        <q-btn
-          unelevated
-          no-caps
-          color="primary"
-          icon="save"
-          label="Save Pricing Rules"
-          class="save-button"
-          @click="saveConfiguration"
-        />
+            <div class="row q-gutter-sm q-mt-md">
+              <q-btn outline no-caps color="white" text-color="white" label="Recalculate" class="col sim-btn" @click="refreshSimulation" />
+              <q-btn
+                unelevated
+                no-caps
+                color="white"
+                text-color="primary"
+                label="View Receipt"
+                class="col sim-btn"
+                :disable="!simulationBreakdown"
+                @click="simulationReceiptOpen = true"
+              />
+            </div>
+          </q-card-section>
+        </q-card>
       </div>
     </div>
+
+    <PricingRuleFormDialog v-model="ruleDialogOpen" :rule="editingRule" @save="saveRuleFromDialog" />
+    <PricingSimulationReceiptDialog
+      v-model="simulationReceiptOpen"
+      :breakdown="simulationBreakdown"
+      :resource-name="simulationResourceLabel"
+      :date-label="simulationDateLabel"
+      :duration-label="simulationDurationLabel"
+    />
+
+    <!-- Bottom save bar -->
+    <div class="bottom-bar">
+      <div class="bottom-note">
+        <q-icon name="info_outline" size="18px" />
+        Changes made to base rates will not affect currently active bookings.
+      </div>
+      <div class="bottom-actions">
+        <q-btn outline no-caps color="primary" label="Discard Changes" @click="discardChanges" />
+        <q-btn unelevated no-caps color="primary" icon="save" label="Save Pricing Rules" @click="saveConfiguration" />
+      </div>
+    </div>
+    </template>
   </q-page>
 </template>
 
@@ -658,1247 +377,1013 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 
 import api from '@/services/api';
+import PricingRuleFormDialog from '@/components/admin/PricingRuleFormDialog.vue';
+import PricingSimulationReceiptDialog from '@/components/admin/PricingSimulationReceiptDialog.vue';
+import { useSettingsStore } from '@/stores/settings-store';
+import { emitDashboardRefresh } from '@/stores/dashboard-events';
 
 /* ==========================================================
    QUASAR
 ========================================================== */
 
 const $q = useQuasar();
+const settingsStore = useSettingsStore();
+const ratePrefix = computed(() => settingsStore.ratePrefix);
 
 /* ==========================================================
    LOAD / SAVE PRICING RULES FROM BACKEND
 ========================================================== */
 
-type PricingPayload = {
-  hourlyRate: number;
-  freeFirstHour: boolean;
-  peakStart: string;
-  peakEnd: string;
-  peakDays: string;
-  peakMultiplier: number;
-  gstRate: number;
-  studentDiscount: number;
+type PricingRule = {
+  id: number | string;
+  name: string;
+  condition: string;
+  modifier: string;
+  modifierType?: string;
+  value?: number;
+  active: boolean;
+  conditionType?: string;
+  direction?: 'surcharge' | 'discount';
+  startDate?: string;
+  endDate?: string;
+  peakDays?: string;
+  minDurationHours?: number;
+  advanceDays?: number;
 };
 
-const loadPricing = async () => {
+type PricingRuleFormState = {
+  id?: number | string;
+  name: string;
+  condition: string;
+  modifier: string;
+  modifierType?: string;
+  value?: number;
+  active: boolean;
+  conditionType?: string;
+  direction?: 'surcharge' | 'discount';
+  startDate?: string;
+  endDate?: string;
+  peakDays?: string;
+  minDurationHours?: number;
+  advanceDays?: number;
+};
+
+type RoleDiscount = { role: string; discount: string };
+type PricingStore = Record<string, Record<string, unknown>>;
+
+const pricingStore = ref<PricingStore>({});
+const pageLoading = ref(true);
+const pageError = ref('');
+const pricingContexts = ref<{ label: string; value: string }[]>([]);
+const selectedPricingContext = ref('general');
+const peakDayOptions = [
+  { label: 'Mon - Fri', value: 'Mon - Fri' },
+  { label: 'Every Day', value: 'Every Day' },
+  { label: 'Weekends', value: 'Weekends' },
+];
+const baseRate = ref('0.00');
+const minimumDuration = ref('1 Hour');
+const durationOptions = ['30 Minutes', '1 Hour', '2 Hours', '3 Hours'];
+const applyTax = ref(true);
+const taxRate = ref('0');
+const taxLabel = ref('Tax');
+const discountRules = ref<PricingRule[]>([]);
+const studyHourlyRate = ref('0.00');
+const freeFirstHour = ref(false);
+const peakStart = ref('');
+const peakEnd = ref('');
+const peakDays = ref('Mon - Fri');
+const peakMultiplier = ref('1');
+const roleDiscounts = ref<RoleDiscount[]>([]);
+const contextRules = ref<PricingRule[]>([]);
+const contextResources = ref<Array<{ id: number; name: string; hourlyRate?: number }>>([]);
+const ruleDialogOpen = ref(false);
+const editingRule = ref<PricingRuleFormState | null>(null);
+const ruleDialogTarget = ref<'general' | 'context'>('general');
+const pendingRuleDirection = ref<'surcharge' | 'discount'>('surcharge');
+const simulationDate = ref(new Date().toISOString().slice(0, 10));
+const simulationStartTime = ref('10:00');
+const simulationEndTime = ref('12:00');
+const simulationBreakdown = ref<{
+  lineItems: Array<{ description: string; calculation: string; amount: number; type?: string }>;
+  subtotal: number;
+  tax: number;
+  taxRate: number;
+  total: number;
+  currency?: string;
+} | null>(null);
+const simulationLoading = ref(false);
+const simulationError = ref('');
+const simulationReceiptOpen = ref(false);
+const simulationResourceId = ref<number | null>(null);
+const simulationUserRole = ref('user');
+
+function toDisplayString(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '';
+}
+
+const applyGeneralToForm = (data: Record<string, unknown>) => {
+  if (data.baseRate !== undefined) baseRate.value = toDisplayString(data.baseRate);
+  if (data.minimumDuration) minimumDuration.value = toDisplayString(data.minimumDuration);
+  if (data.applyTax !== undefined) applyTax.value = Boolean(data.applyTax);
+  if (data.taxRate !== undefined) taxRate.value = toDisplayString(data.taxRate);
+  if (data.taxLabel) taxLabel.value = toDisplayString(data.taxLabel);
+  discountRules.value = Array.isArray(data.rules)
+    ? (data.rules as PricingRule[]).map((rule, index) => mapRuleFromApi(rule, index))
+    : [];
+};
+
+function mapRuleFromApi(rule: PricingRule, index: number): PricingRule {
+  return {
+    id: rule.id ?? index + 1,
+    name: rule.name || 'Rule',
+    condition: rule.condition || '',
+    modifier: rule.modifier || '',
+    active: rule.active !== false,
+    ...(rule.modifierType ? { modifierType: rule.modifierType } : {}),
+    ...(rule.value !== undefined ? { value: rule.value } : {}),
+    ...(rule.conditionType ? { conditionType: rule.conditionType } : {}),
+    ...(rule.direction ? { direction: rule.direction } : {}),
+    ...(rule.startDate ? { startDate: rule.startDate } : {}),
+    ...(rule.endDate ? { endDate: rule.endDate } : {}),
+    ...(rule.peakDays ? { peakDays: rule.peakDays } : {}),
+    ...(rule.minDurationHours !== undefined ? { minDurationHours: rule.minDurationHours } : {}),
+    ...(rule.advanceDays !== undefined ? { advanceDays: rule.advanceDays } : {}),
+  };
+}
+
+const applyContextToForm = (data: Record<string, unknown>) => {
+  if (data.hourlyRate !== undefined) studyHourlyRate.value = toDisplayString(data.hourlyRate);
+  if (data.freeFirstHour !== undefined) freeFirstHour.value = Boolean(data.freeFirstHour);
+  if (data.peakStart) peakStart.value = toDisplayString(data.peakStart);
+  if (data.peakEnd) peakEnd.value = toDisplayString(data.peakEnd);
+  if (data.peakDays) peakDays.value = toDisplayString(data.peakDays);
+  if (data.peakMultiplier !== undefined) peakMultiplier.value = toDisplayString(data.peakMultiplier);
+  roleDiscounts.value = Array.isArray(data.roleDiscounts)
+    ? (data.roleDiscounts as RoleDiscount[]).map((item) => ({
+        role: item.role || 'Role',
+        discount: String(item.discount ?? '0'),
+      }))
+    : [];
+  contextRules.value = Array.isArray(data.rules)
+    ? (data.rules as PricingRule[]).map((rule, index) => mapRuleFromApi(rule, index))
+    : [];
+};
+
+const selectedRuleSet = computed(() =>
+  selectedPricingContext.value === 'general' ? discountRules.value : contextRules.value,
+);
+const selectedRulesDescription = computed(() =>
+  selectedPricingContext.value === 'general'
+    ? 'Global pricing rules always remain visible and apply across booking systems unless overridden by a booking-system rule.'
+    : `Rules for ${selectedContextLabel.value} stay visible while you update configuration below.`,
+);
+
+const simulationResourceOptions = computed(() =>
+  contextResources.value.map((resource) => ({
+    label: `${resource.name} (${formatCurrency(resource.hourlyRate || Number(studyHourlyRate.value) || 0)}/hr)`,
+    value: resource.id,
+  })),
+);
+
+const simulationRoleOptions = computed(() => {
+  const options = [
+    { label: 'Standard User', value: 'user' },
+    { label: 'Admin', value: 'admin' },
+  ];
+  for (const item of roleDiscounts.value) {
+    if (item.role && !options.some((opt) => opt.value === item.role)) {
+      options.push({ label: item.role, value: item.role });
+    }
+  }
+  return options;
+});
+
+const simulationResourceLabel = computed(() => {
+  const resource = contextResources.value.find((item) => item.id === simulationResourceId.value);
+  return resource?.name || selectedContextLabel.value;
+});
+
+const simulationDateLabel = computed(() => {
+  if (!simulationDate.value) return '—';
+  return new Date(`${simulationDate.value}T12:00:00`).toLocaleDateString();
+});
+
+const simulationDurationLabel = computed(() => {
+  const hours = simulationHours.value;
+  if (hours <= 0) return '—';
+  return `${hours} ${hours === 1 ? 'Hr' : 'Hrs'}`;
+});
+
+const simulationHours = computed(() => {
+  const [sh = 0, sm = 0] = simulationStartTime.value.split(':').map(Number);
+  const [eh = 0, em = 0] = simulationEndTime.value.split(':').map(Number);
+  const start = sh * 60 + sm;
+  const end = eh * 60 + em;
+  return end > start ? (end - start) / 60 : 0;
+});
+
+const activeRoleDiscountCount = computed(
+  () => roleDiscounts.value.filter((item) => item.role.trim() && Number(item.discount) > 0).length,
+);
+
+function ruleModifierClass(modifier: string) {
+  return String(modifier).trim().startsWith('-') ? 'mod-discount' : 'mod-surcharge';
+}
+
+async function loadContextResources() {
+  if (selectedPricingContext.value === 'general') {
+    contextResources.value = [];
+    return;
+  }
+  const label =
+    pricingContexts.value.find((item) => item.value === selectedPricingContext.value)?.label || '';
   try {
-    const { data } = await api.get<{ pricing: Record<string, Partial<PricingPayload>> }>(
-      '/pricing-rules/study',
-    );
-    const study = data.pricing?.study || {};
-    if (study.hourlyRate !== undefined) studyHourlyRate.value = String(study.hourlyRate);
-    if (study.freeFirstHour !== undefined) freeFirstHour.value = study.freeFirstHour;
-    if (study.peakStart) peakStart.value = study.peakStart;
-    if (study.peakEnd) peakEnd.value = study.peakEnd;
-    if (study.peakDays) peakDays.value = study.peakDays;
-    if (study.peakMultiplier !== undefined) peakMultiplier.value = String(study.peakMultiplier);
-    // Map backend tax/discount fields into general section
-    if (study.gstRate !== undefined) taxRate.value = String(Number(study.gstRate) * 100);
-    if (study.studentDiscount !== undefined)
-      roleDiscounts.value[0]!.discount = String(Number(study.studentDiscount) * 100);
+    const { data } = await api.get<{
+      resources: Array<{ id: number; name: string; type: string; hourlyRate?: number }>;
+    }>('/resources');
+    contextResources.value = (data.resources || []).filter((resource) => resource.type === label);
+    if (contextResources.value.length) {
+      simulationResourceId.value = contextResources.value[0]?.id ?? null;
+    } else {
+      simulationResourceId.value = null;
+    }
+  } catch {
+    contextResources.value = [];
+  }
+}
+
+function applyPricingFromStore(context = selectedPricingContext.value) {
+  if (context === 'general') {
+    applyGeneralToForm(pricingStore.value.general || {});
+  } else {
+    applyContextToForm(pricingStore.value[context] || {});
+  }
+}
+
+const loadPricing = async () => {
+  pageLoading.value = true;
+  pageError.value = '';
+  try {
+    const [metaRes, pricingRes] = await Promise.all([
+      api.get<{ contexts: { label: string; value: string }[] }>('/pricing-rules/meta'),
+      api.get<{ pricing: PricingStore }>(`/pricing-rules/${selectedPricingContext.value}`),
+    ]);
+    pricingContexts.value = metaRes.data.contexts?.length
+      ? metaRes.data.contexts
+      : [{ label: 'General Base Pricing', value: 'general' }];
+    pricingStore.value = { ...(pricingRes.data.pricing || {}) };
+    applyPricingFromStore();
+    if (selectedPricingContext.value !== 'general') {
+      await loadContextResources();
+    }
+    await refreshSimulation();
   } catch (error) {
     console.error('Failed to load pricing rules', error);
+    pageError.value = 'Unable to load pricing configuration from the server.';
+  } finally {
+    pageLoading.value = false;
   }
 };
 
-onMounted(() => {
-  void loadPricing();
-});
-
-/* ==========================================================
-   PRICING CONTEXT
-========================================================== */
-
-const selectedPricingContext = ref('general');
-
-const pricingContexts = [
-  {
-    label: 'General Base Pricing',
-    value: 'general',
-  },
-  {
-    label: 'Rental Vehicle',
-    value: 'vehicle',
-  },
-  {
-    label: 'Study Room',
-    value: 'study',
-  },
-];
+async function reloadPricingFromServer(context = selectedPricingContext.value) {
+  const { data } = await api.get<{ pricing: PricingStore }>(`/pricing-rules/${context}`);
+  pricingStore.value = { ...(data.pricing || {}) };
+  applyPricingFromStore(context);
+}
 
 const selectedContextLabel = computed(() => {
-  const context = pricingContexts.find((item) => item.value === selectedPricingContext.value);
-
+  const context = pricingContexts.value.find((item) => item.value === selectedPricingContext.value);
   return context?.label || 'General Base Pricing';
 });
 
-/* ==========================================================
-   GENERAL PRICING
-========================================================== */
+function addRoleDiscount() {
+  roleDiscounts.value.push({ role: '', discount: '0' });
+}
 
-const baseRate = ref('25.00');
+function removeRoleDiscount(index: number) {
+  roleDiscounts.value.splice(index, 1);
+}
 
-const minimumDuration = ref('1 Hour');
+async function refreshSimulation() {
+  simulationLoading.value = true;
+  simulationError.value = '';
+  simulationBreakdown.value = null;
+  try {
+    let resourceId: number | null = simulationResourceId.value;
+    let resourceType = '';
+    if (selectedPricingContext.value !== 'general') {
+      const label = pricingContexts.value.find((item) => item.value === selectedPricingContext.value)?.label;
+      resourceType = label || '';
+    }
+    if (!resourceId && selectedPricingContext.value === 'general') {
+      const { data: resourcesData } = await api.get<{ resources: Array<{ id: number }> }>('/resources');
+      resourceId = resourcesData.resources?.[0]?.id ?? null;
+    }
+    if (!resourceId && !resourceType) {
+      simulationError.value = 'Create a resource for this booking system to preview pricing.';
+      return;
+    }
 
-const durationOptions = ['30 Minutes', '1 Hour', '2 Hours', '3 Hours'];
+    const pricingOverride: Record<string, unknown> = {
+      general: buildGeneralPayload(),
+    };
+    if (selectedPricingContext.value !== 'general') {
+      pricingOverride.context = buildContextPayload();
+    }
 
-const currency = ref('USD');
+    const { data } = await api.post<{ breakdown: typeof simulationBreakdown.value }>('/pricing-rules/calculate', {
+      resourceId,
+      resourceType,
+      date: simulationDate.value,
+      startTime: simulationStartTime.value,
+      endTime: simulationEndTime.value,
+      pricingOverride,
+      simulationUserRole: simulationUserRole.value,
+    });
+    simulationBreakdown.value = data.breakdown;
+  } catch (error: unknown) {
+    simulationError.value =
+      typeof error === 'object' && error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Simulation failed.'
+        : 'Simulation failed.';
+  } finally {
+    simulationLoading.value = false;
+  }
+}
 
-const currencyOptions = [
-  {
-    label: 'USD ($)',
-    value: 'USD',
-  },
-  {
-    label: 'EUR (€)',
-    value: 'EUR',
-  },
-  {
-    label: 'GBP (£)',
-    value: 'GBP',
-  },
-];
+const formatCurrency = (value: number) => settingsStore.formatMoney(value);
 
-/* ==========================================================
-   TAX
-========================================================== */
-
-const applyTax = ref(true);
-
-const taxRate = ref('8.5');
-
-const taxLabel = ref('State Sales Tax');
-
-/* ==========================================================
-   DISCOUNT RULES
-========================================================== */
-
-const discountRules = ref([
-  {
-    id: 1,
-    name: 'Bulk Booking (8h+)',
-    condition: 'Duration >= 8h',
-    modifier: '-15% Total',
-    active: true,
-  },
-  {
-    id: 2,
-    name: 'Early Bird',
-    condition: 'Advance > 30 days',
-    modifier: '-10% Base',
-    active: true,
-  },
-  {
-    id: 3,
-    name: 'Weekend Surge',
-    condition: 'Day = Sat, Sun',
-    modifier: '+20% Base',
-    active: false,
-  },
-]);
-
-/* ==========================================================
-   PRICING SIMULATION
-========================================================== */
-
-const simulation = computed(() => {
-  const hourly = Number(baseRate.value) || 0;
-
-  const base = hourly * 2;
-
-  const discount = base * 0;
-
-  const subtotal = base - discount;
-
-  const tax = applyTax.value ? subtotal * ((Number(taxRate.value) || 0) / 100) : 0;
-
-  const total = subtotal + tax;
-
-  return {
-    base,
-    discount,
-    subtotal,
-    tax,
-    total,
-  };
+onMounted(() => {
+  void loadPricing().then(() => refreshSimulation());
 });
-
-const formatCurrency = (value: number) => {
-  return `$${Number(value).toFixed(2)}`;
-};
-
-/* ==========================================================
-   RENTAL VEHICLE
-========================================================== */
-
-const vehicleRates = ref([
-  {
-    id: 1,
-    name: 'Sedan (Standard)',
-    icon: 'directions_car',
-    hourly: '$15.00',
-    daily: '$85.00',
-    discount: '15% off',
-    status: 'Active',
-  },
-  {
-    id: 2,
-    name: 'SUV (Premium)',
-    icon: 'airport_shuttle',
-    hourly: '$25.00',
-    daily: '$140.00',
-    discount: '10% off',
-    status: 'Active',
-  },
-  {
-    id: 3,
-    name: 'Motorbike',
-    icon: 'two_wheeler',
-    hourly: '$10.00',
-    daily: '$55.00',
-    discount: '20% off',
-    status: 'Active',
-  },
-]);
-
-const mileageEnabled = ref(true);
-
-const seasonalRules = ref([
-  {
-    id: 1,
-    name: 'Holiday Peak Multiplier',
-    date: 'Dec 15 - Jan 05',
-    adjustment: '+25%',
-    status: 'HIGH PRIORITY',
-    active: true,
-  },
-  {
-    id: 2,
-    name: 'Weekend Premium',
-    date: 'Fri 5PM - Sun 11PM',
-    adjustment: '+10%',
-    status: 'ACTIVE',
-    active: true,
-  },
-  {
-    id: 3,
-    name: 'Off-Season Discount',
-    date: 'Feb 01 - Mar 31',
-    adjustment: '-15%',
-    status: 'INACTIVE',
-    active: false,
-  },
-]);
-
-/* ==========================================================
-   STUDY ROOM
-========================================================== */
-
-const studyHourlyRate = ref('15.00');
-
-const freeFirstHour = ref(true);
-
-const peakStart = ref('17:00');
-
-const peakEnd = ref('22:00');
-
-const peakDays = ref('Mon - Fri');
-
-const peakMultiplier = ref('1.5');
-
-const roleDiscounts = ref([
-  {
-    role: 'Student Member',
-    discount: '20',
-  },
-  {
-    role: 'Faculty',
-    discount: '50',
-  },
-]);
-
-const cancellationCharges = ref([
-  {
-    label: '< 24 hours',
-    value: '25% of fee',
-  },
-  {
-    label: '< 12 hours',
-    value: '50% of fee',
-  },
-  {
-    label: 'No Show',
-    value: '100% of fee',
-  },
-]);
 
 /* ==========================================================
    ACTIONS
 ========================================================== */
 
 const addDiscountRule = () => {
-  discountRules.value.push({
-    id: Date.now(),
-    name: 'New Discount Rule',
-    condition: 'Configure condition',
-    modifier: '0%',
-    active: false,
-  });
+  ruleDialogTarget.value = 'general';
+  editingRule.value = null;
+  ruleDialogOpen.value = true;
 };
 
-const editDiscountRule = (rule: { name: string }) => {
-  $q.notify({
-    type: 'info',
-    message: `Editing ${rule.name}`,
-  });
+const addRuleForSelectedContext = () => {
+  if (selectedPricingContext.value === 'general') {
+    addDiscountRule();
+    return;
+  }
+  openContextRuleEditor('surcharge');
 };
+
+const openRuleEditor = (rule: PricingRule) => {
+  ruleDialogTarget.value = 'general';
+  editingRule.value = { ...rule };
+  ruleDialogOpen.value = true;
+};
+
+const openRuleEditorForSelectedContext = (rule: PricingRule) => {
+  if (selectedPricingContext.value === 'general') {
+    openRuleEditor(rule);
+    return;
+  }
+  editContextRule(rule);
+};
+
+const openContextRuleEditor = (direction: 'surcharge' | 'discount') => {
+  ruleDialogTarget.value = 'context';
+  pendingRuleDirection.value = direction;
+  editingRule.value = { direction, name: '', condition: '', modifier: '', active: true };
+  ruleDialogOpen.value = true;
+};
+
+const editContextRule = (rule: PricingRule) => {
+  ruleDialogTarget.value = 'context';
+  pendingRuleDirection.value = String(rule.modifier).startsWith('-') ? 'discount' : 'surcharge';
+  editingRule.value = { ...rule, direction: pendingRuleDirection.value };
+  ruleDialogOpen.value = true;
+};
+
+const removeRule = (rule: PricingRule) => {
+  discountRules.value = discountRules.value.filter((item) => item.id !== rule.id);
+};
+
+const removeRuleFromSelectedContext = (rule: PricingRule) => {
+  if (selectedPricingContext.value === 'general') {
+    removeRule(rule);
+    return;
+  }
+  contextRules.value = contextRules.value.filter((item) => item.id !== rule.id);
+};
+
+const saveRuleFromDialog = (rule: PricingRuleFormState) => {
+  const normalized: PricingRule = {
+    id: rule.id ?? Date.now(),
+    name: rule.name,
+    condition: rule.condition,
+    modifier: rule.modifier,
+    active: rule.active,
+    ...(rule.modifierType ? { modifierType: rule.modifierType } : {}),
+    ...(rule.value !== undefined ? { value: rule.value } : {}),
+    ...(rule.conditionType ? { conditionType: rule.conditionType } : {}),
+    ...(rule.direction ? { direction: rule.direction } : {}),
+    ...(rule.startDate ? { startDate: rule.startDate } : {}),
+    ...(rule.endDate ? { endDate: rule.endDate } : {}),
+    ...(rule.peakDays ? { peakDays: rule.peakDays } : {}),
+    ...(rule.minDurationHours !== undefined ? { minDurationHours: rule.minDurationHours } : {}),
+    ...(rule.advanceDays !== undefined ? { advanceDays: rule.advanceDays } : {}),
+  };
+
+  if (ruleDialogTarget.value === 'general') {
+    const index = discountRules.value.findIndex((item) => item.id === normalized.id);
+    if (index >= 0) discountRules.value[index] = normalized;
+    else discountRules.value.push(normalized);
+    void refreshSimulation();
+    return;
+  }
+
+  const index = contextRules.value.findIndex((item) => item.id === normalized.id);
+  if (index >= 0) contextRules.value[index] = normalized;
+  else contextRules.value.push(normalized);
+  void refreshSimulation();
+};
+
+const buildGeneralPayload = () => ({
+  baseRate: Number(baseRate.value) || 0,
+  minimumDuration: minimumDuration.value,
+  applyTax: applyTax.value,
+  taxRate: Number(taxRate.value) || 0,
+  taxLabel: taxLabel.value,
+  rules: discountRules.value,
+});
+
+const buildContextPayload = () => ({
+  hourlyRate: Number(studyHourlyRate.value) || 0,
+  freeFirstHour: freeFirstHour.value,
+  peakStart: peakStart.value,
+  peakEnd: peakEnd.value,
+  peakDays: peakDays.value,
+  peakMultiplier: Number(peakMultiplier.value) || 1,
+  roleDiscounts: roleDiscounts.value,
+  rules: contextRules.value,
+});
 
 const discardChanges = () => {
   $q.dialog({
     title: 'Discard Changes',
-    message: 'Are you sure you want to discard your changes?',
+    message: 'Reload pricing configuration from the server?',
     cancel: true,
     persistent: true,
   }).onOk(() => {
-    $q.notify({
-      type: 'info',
-      message: 'Changes discarded',
-    });
+    void loadPricing();
+    $q.notify({ type: 'info', message: 'Changes discarded' });
   });
 };
 
 const saveConfiguration = async () => {
+  if (Number(baseRate.value) < 0 || Number(studyHourlyRate.value) < 0) {
+    $q.notify({ type: 'warning', message: 'Rates cannot be negative.' });
+    return;
+  }
+  if (Number(taxRate.value) < 0 || Number(taxRate.value) > 100) {
+    $q.notify({ type: 'warning', message: 'Tax rate must be between 0 and 100.' });
+    return;
+  }
   try {
-    await api.put('/pricing-rules/study', {
-      hourlyRate: Number(studyHourlyRate.value) || 0,
-      freeFirstHour: freeFirstHour.value,
-      peakStart: peakStart.value,
-      peakEnd: peakEnd.value,
-      peakDays: peakDays.value,
-      peakMultiplier: Number(peakMultiplier.value) || 1,
-      gstRate: (Number(taxRate.value) && !isNaN(Number(taxRate.value))) && taxRate.value ? Number(taxRate.value) / 100 : 0.18,
-      studentDiscount: (Number(roleDiscounts.value[0]?.discount)) / 100 || 0.1,
-    });
-    $q.notify({
-      type: 'positive',
-      message: 'Pricing configuration saved successfully',
-    });
-  } catch (error) {
+    const generalPayload = buildGeneralPayload();
+    await api.put('/pricing-rules/general', generalPayload);
+
+    if (selectedPricingContext.value !== 'general') {
+      const contextPayload = buildContextPayload();
+      await api.put(`/pricing-rules/${selectedPricingContext.value}`, contextPayload);
+    }
+
+    $q.notify({ type: 'positive', message: 'Pricing configuration saved successfully' });
+    await reloadPricingFromServer();
+    if (selectedPricingContext.value !== 'general') {
+      await loadContextResources();
+    }
+    emitDashboardRefresh();
+    await refreshSimulation();
+  } catch (error: unknown) {
     console.error('Save pricing failed', error);
-    $q.notify({
-      type: 'negative',
-      message: 'Failed to save pricing configuration',
-    });
+    const message =
+      typeof error === 'object' && error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+    $q.notify({ type: 'negative', message: message || 'Failed to save pricing configuration' });
   }
 };
 
-/* ==========================================================
-   WATCHERS
-========================================================== */
+watch(
+  () => settingsStore.currencyCode,
+  () => {
+    void refreshSimulation();
+  },
+);
 
-watch(selectedPricingContext, () => {
+watch(
+  [
+    baseRate,
+    minimumDuration,
+    applyTax,
+    taxRate,
+    taxLabel,
+    studyHourlyRate,
+    freeFirstHour,
+    peakStart,
+    peakEnd,
+    peakDays,
+    peakMultiplier,
+    roleDiscounts,
+    discountRules,
+    contextRules,
+  ],
+  () => {
+    void refreshSimulation();
+  },
+  { deep: true },
+);
+
+watch(selectedPricingContext, async (context) => {
+  try {
+    const { data } = await api.get<{ pricing: PricingStore }>(`/pricing-rules/${context}`);
+    pricingStore.value = { ...(data.pricing || {}) };
+  } catch {
+    /* keep cached store */
+  }
+  applyPricingFromStore(context);
+  await loadContextResources();
+  await refreshSimulation();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 </script>
 
 <style scoped>
-/* ==========================================================
-   PAGE
-========================================================== */
-
 .pricing-page {
   min-height: 100%;
-  padding: 0 20px 18px;
-
-  background: #f7f8fd;
-
-  color: #182033;
+  padding: 0 24px 100px;
+  background: var(--portal-muted-bg);
+  color: var(--portal-text);
 }
 
-/* ==========================================================
-   TOP TOOLBAR
-========================================================== */
-
-.top-toolbar {
-  height: 42px;
-
+.booking-system-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-
-  margin: 0 -20px;
-  padding: 0 20px;
-
-  background: #ffffff;
-  border-bottom: 1px solid #e2e5ef;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
 }
 
-.context-select {
-  width: 145px;
+.toolbar-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--portal-muted);
 }
 
-.context-select :deep(.q-field__control) {
-  min-height: 28px;
-  height: 28px;
+.booking-system-select {
+  min-width: 220px;
 }
 
-.context-select :deep(.q-field__native) {
-  font-size: 9px;
-}
-
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.toolbar-icon {
-  color: #30364a;
-}
-
-.admin-avatar {
-  margin-left: 5px;
-}
-
-/* ==========================================================
-   PAGE HEADER
-========================================================== */
-
-.page-header {
+.pricing-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-
-  padding: 20px 0 13px;
+  gap: 20px;
+  padding: 24px 0 20px;
 }
 
-.page-title {
-  color: #101522;
-
-  font-size: 20px;
-  line-height: 1.15;
+.pricing-title {
+  margin: 0;
+  font-size: 28px;
   font-weight: 700;
+  color: var(--portal-text);
+  line-height: 1.2;
 }
 
-.page-description {
-  margin-top: 3px;
-
-  color: #737a8e;
-
-  font-size: 9px;
+.pricing-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--portal-muted);
 }
 
 .header-actions {
   display: flex;
-  gap: 7px;
-}
-
-.discard-button,
-.save-button {
-  min-height: 25px;
-
-  border-radius: 5px;
-
-  font-size: 8px;
-}
-
-.save-button {
-  padding: 0 12px;
-}
-
-/* ==========================================================
-   GENERAL LAYOUT
-========================================================== */
-
-.pricing-layout {
-  display: grid;
-
-  grid-template-columns: minmax(0, 1fr) 185px;
-
-  gap: 13px;
-}
-
-.pricing-main {
-  min-width: 0;
-}
-
-.pricing-side {
-  min-width: 0;
-}
-
-/* ==========================================================
-   CARDS
-========================================================== */
-
-.pricing-card {
-  border: 1px solid #d9deea;
-  border-radius: 7px;
-
-  background: #ffffff;
-}
-
-.pricing-card + .pricing-card {
-  margin-top: 13px;
-}
-
-.pricing-card .q-card__section {
-  padding: 13px;
-}
-
-.no-padding {
-  padding: 0 !important;
-}
-
-.card-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.card-title {
-  color: #1a2235;
-
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.card-subtitle {
-  margin-top: 2px;
-
-  color: #7a8193;
-
-  font-size: 7px;
-}
-
-.card-title-icon {
-  width: 24px;
-  height: 24px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 4px;
-
-  font-size: 13px;
-}
-
-.card-title-icon.purple {
-  color: #5753e8;
-  background: #e8e9ff;
-}
-
-.card-title-icon.green {
-  color: #168c70;
-  background: #ddf4eb;
-}
-
-.card-title-icon.red {
-  color: #e04545;
-  background: #ffe6e6;
-}
-
-.card-separator {
-  margin: 7px 0 10px;
-
-  background: #dfe3ec;
-}
-
-/* ==========================================================
-   FORM
-========================================================== */
-
-.form-grid {
-  display: grid;
-
-  grid-template-columns: 1fr 1fr;
-
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.panel-card {
+  border: 1px solid var(--portal-border);
+  border-radius: 12px;
+  background: var(--portal-card);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.rules-panel {
+  margin-bottom: 20px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-head.compact {
+  align-items: center;
+}
+
+.panel-head-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.panel-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.panel-icon.green { background: var(--portal-status-confirmed-bg); color: var(--portal-status-confirmed-text); }
+.panel-icon.purple { background: #ede9fe; color: #6d28d9; }
+.panel-icon.red { background: #fee2e2; color: var(--portal-status-unavailable-text); }
+.panel-icon.blue { background: var(--portal-status-pending-bg); color: var(--portal-status-booked-text); }
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--portal-text);
+}
+
+.panel-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--portal-muted);
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 20px;
+  align-items: start;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
 }
 
 .field-label {
-  margin-bottom: 4px;
-
-  color: #454c60;
-
-  font-size: 8px;
-  font-weight: 500;
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--portal-text-secondary);
+  margin-bottom: 6px;
 }
 
-.pricing-input :deep(.q-field__control) {
-  height: 27px;
-  min-height: 27px;
-
-  border-radius: 5px;
-}
-
-.pricing-input :deep(.q-field__native) {
-  font-size: 9px;
-}
-
-.field-help {
+.field-hint {
   margin-top: 4px;
-
-  color: #8990a1;
-
-  font-size: 7px;
+  font-size: 12px;
+  color: var(--portal-muted);
 }
 
-.currency-options {
-  font-size: 8px;
-}
-
-.currency-options :deep(.q-radio__label) {
-  font-size: 8px;
-}
-
-/* ==========================================================
-   DISCOUNT RULES
-========================================================== */
-
-.discount-header {
+.toggle-field {
   display: flex;
   align-items: center;
   justify-content: space-between;
-
-  padding: 10px 12px;
+  gap: 12px;
 }
 
-.add-rule-button {
-  min-height: 23px;
-
-  border-radius: 4px;
-
-  font-size: 8px;
+.info-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--portal-muted-bg);
+  font-size: 12px;
+  color: var(--portal-muted);
 }
 
 .rules-table {
-  border-top: 1px solid #dce1eb;
+  margin-top: 16px;
+  border: 1px solid var(--portal-border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-.rules-head,
-.rules-row {
+.rules-table-head,
+.rules-table-row {
   display: grid;
-
-  grid-template-columns:
-    1.25fr
-    1fr
-    0.8fr
-    0.65fr
-    0.45fr;
-
+  grid-template-columns: 1.2fr 1.4fr 0.9fr 1fr 0.7fr;
+  gap: 12px;
   align-items: center;
+  padding: 12px 16px;
 }
 
-.rules-head {
-  min-height: 22px;
-
-  padding: 0 10px;
-
-  color: #535b70;
-  background: #e9efff;
-
-  font-size: 7px;
-  font-weight: 600;
+.rules-table-head {
+  background: var(--portal-muted-bg);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--portal-muted);
 }
 
-.rules-row {
-  min-height: 28px;
+.rules-table-row {
+  border-top: 1px solid #e2e8f0;
+  font-size: 14px;
+}
 
-  padding: 0 10px;
+.rules-table-row:hover {
+  background: var(--portal-muted-bg);
+}
 
-  border-top: 1px solid #edf0f5;
-
-  color: #4d5569;
-
-  font-size: 8px;
+.rules-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--portal-muted);
+  font-size: 14px;
 }
 
 .rule-name {
-  color: #252c40;
+  font-weight: 600;
+  color: var(--portal-text);
 }
 
-.discount-value {
-  color: #188d70;
+.rule-condition {
+  color: var(--portal-text-secondary);
+  font-size: 13px;
+}
+
+.rule-modifier {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.mod-surcharge { color: var(--portal-error); }
+.mod-discount { color: var(--portal-success); }
+
+.rule-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .rule-actions {
   display: flex;
-  justify-content: center;
+  gap: 4px;
 }
 
-.status-active,
-.status-inactive {
-  border-radius: 3px;
-
-  padding: 3px 5px;
-
-  font-size: 6px;
-  font-weight: 600;
-}
-
-.status-active {
-  color: #158567;
-  background: #d9f1e9;
-}
-
-.status-inactive {
-  color: #7e8698;
-  background: #e8ebf2;
-}
-
-/* ==========================================================
-   TAX
-========================================================== */
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  margin: 16px 0 8px;
-
-  color: #454c60;
-
-  font-size: 9px;
-}
-
-.info-box {
-  display: flex;
-  gap: 5px;
-
-  padding: 8px;
-
-  border-radius: 4px;
-
-  color: #687084;
-  background: #edf1ff;
-
-  font-size: 7px;
-  line-height: 1.35;
-}
-
-/* ==========================================================
-   SIMULATION
-========================================================== */
-
-.simulation-card {
-  margin-top: 13px;
-
-  overflow: hidden;
-
-  border-radius: 7px;
-
-  color: #ffffff;
-
-  background: #5a56ed;
-}
-
-.simulation-card .q-card__section {
-  padding: 14px;
-}
-
-.simulation-title {
-  font-size: 15px;
+.badge-active {
+  background: var(--portal-status-confirmed-bg);
+  color: var(--portal-status-confirmed-text);
+  font-size: 10px;
   font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
 }
 
-.simulation-description {
-  margin-top: 4px;
-
-  color: rgba(255, 255, 255, 0.82);
-
-  font-size: 8px;
-  line-height: 1.35;
+.badge-inactive {
+  background: var(--portal-summary-bg);
+  color: var(--portal-muted);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
 }
 
-.simulation-body {
-  margin-top: 11px;
-
-  padding: 7px;
-
-  border-radius: 4px;
-
-  background: rgba(255, 255, 255, 0.12);
+.peak-section {
+  background: var(--portal-muted-bg);
+  border: 1px solid var(--portal-border);
+  border-radius: 10px;
+  padding: 16px;
 }
 
-.simulation-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 4px 0;
-
-  font-size: 7px;
+.peak-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--portal-text-secondary);
+  margin-bottom: 12px;
 }
 
-.simulation-row strong {
-  font-size: 8px;
-}
-
-.simulation-row .negative {
-  color: #b9ffd9;
-}
-
-.simulation-row.total {
-  padding-top: 7px;
-
-  font-size: 8px;
-}
-
-.simulation-body .q-separator {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-/* ==========================================================
-   RENTAL VEHICLE
-========================================================== */
-
-.vehicle-layout {
+.peak-table-head,
+.peak-table-row {
   display: grid;
-
-  grid-template-columns: minmax(0, 1fr) 185px;
-
-  gap: 13px;
-}
-
-.vehicle-card-header,
-.study-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 11px 13px;
-}
-
-.vehicle-table {
-  border-top: 1px solid #dce1eb;
-}
-
-.vehicle-table-head,
-.vehicle-table-row {
-  display: grid;
-
-  grid-template-columns:
-    1.4fr
-    0.8fr
-    0.8fr
-    1fr
-    0.6fr;
-
+  grid-template-columns: 1.5fr 1fr 0.6fr;
+  gap: 12px;
   align-items: center;
 }
 
-.vehicle-table-head {
-  min-height: 29px;
-
-  padding: 0 13px;
-
-  color: #4f5870;
-  background: #e9efff;
-
-  font-size: 7px;
+.peak-table-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--portal-muted);
+  margin-bottom: 8px;
 }
 
-.vehicle-table-row {
-  min-height: 47px;
-
-  padding: 0 13px;
-
-  border-top: 1px solid #e8ebf1;
-
-  color: #242b3e;
-
-  font-size: 8px;
-}
-
-.vehicle-name {
+.peak-times {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.vehicle-icon {
-  width: 24px;
-  height: 24px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 50%;
-
-  color: #5260df;
-  background: #edf0ff;
+.peak-times span {
+  font-size: 13px;
+  color: var(--portal-muted);
 }
 
-.green-text {
-  color: #168c70;
-}
-
-.vehicle-bottom-grid {
-  display: grid;
-
-  grid-template-columns: 1fr 1fr;
-
-  gap: 13px;
-
-  margin-top: 13px;
-}
-
-.small-card-header {
+.rate-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #f1f5f9;
 }
 
-.small-description {
-  color: #737a8e;
-
-  font-size: 8px;
-  line-height: 1.4;
-}
-
-.mini-field {
-  display: flex;
-  justify-content: space-between;
-
-  padding: 6px;
-
-  margin-top: 6px;
-
-  border: 1px solid #dfe3eb;
-  border-radius: 4px;
-
-  color: #596174;
-
-  font-size: 8px;
-}
-
-.mini-field strong {
-  color: #263047;
-}
-
-.mini-button {
-  min-height: 22px;
-
-  margin-top: 8px;
-
-  font-size: 7px;
-}
-
-.insurance-row {
-  display: flex;
-  justify-content: space-between;
-
-  padding: 3px 0;
-
-  color: #394155;
-
-  font-size: 8px;
-}
-
-.insurance-row strong {
-  color: #27304a;
-}
-
-.insurance-row.muted {
-  color: #a0a5b3;
-}
-
-/* ==========================================================
-   SEASONAL
-========================================================== */
-
-.season-rule {
-  margin-top: 10px;
-  padding: 9px;
-
-  border: 1px solid #e1e4ec;
-  border-radius: 5px;
-
-  background: #ffffff;
-
-  box-shadow: 0 1px 3px rgba(30, 40, 70, 0.04);
-}
-
-.season-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  font-size: 8px;
-}
-
-.season-date {
-  margin-top: 4px;
-
-  color: #72798c;
-
-  font-size: 7px;
-}
-
-.season-adjustment {
-  display: flex;
-  justify-content: space-between;
-
-  margin-top: 10px;
-
-  font-size: 7px;
-}
-
-.season-adjustment strong {
-  color: #e23f46;
-}
-
-.priority-high {
-  color: #e0444b;
-  background: #ffe5e6;
-
-  border-radius: 3px;
-
-  font-size: 6px;
-}
-
-/* ==========================================================
-   STUDY ROOM
-========================================================== */
-
-.study-layout {
-  display: grid;
-
-  grid-template-columns: minmax(0, 1fr) 255px;
-
-  gap: 13px;
-}
-
-.free-hour-setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 7px 10px;
-
-  border: 1px solid #e0e4ed;
-  border-radius: 5px;
-}
-
-.peak-window {
-  margin-top: 6px;
-
-  padding: 8px;
-
-  border-radius: 5px;
-
-  background: #e9efff;
-}
-
-.peak-head {
-  display: grid;
-
-  grid-template-columns: 1fr 1fr 1fr;
-
-  color: #5b6377;
-
-  font-size: 7px;
-}
-
-.peak-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-
-  margin-top: 6px;
-}
-
-.peak-row .q-field {
-  width: 75px;
-}
-
-.peak-row .q-field :deep(.q-field__control) {
-  min-height: 24px;
-  height: 24px;
-}
-
-.peak-row .q-field :deep(.q-field__native) {
-  font-size: 7px;
-}
-
-.role-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 9px 0;
-
-  border-bottom: 1px solid #eceef3;
-}
-
-.role-row:last-child {
+.rate-row:last-child {
   border-bottom: none;
 }
 
-.role-row strong {
-  display: block;
-
-  color: #343b4f;
-
-  font-size: 8px;
+.rate-input {
+  max-width: 140px;
 }
 
-.role-row span {
-  display: block;
+.role-discount-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 
+.role-discount-fields {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 8px;
+}
+
+.simulation-panel {
+  background: linear-gradient(160deg, #1e3a8a 0%, #2563eb 55%, #3b82f6 100%);
+  border-radius: 12px;
+  color: var(--portal-on-primary);
+}
+
+.simulation-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.simulation-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.simulation-sub {
+  font-size: 12px;
+  opacity: 0.85;
   margin-top: 2px;
-
-  color: #858b9a;
-
-  font-size: 7px;
 }
 
-.percentage-input {
-  width: 57px;
+.sim-input :deep(.q-field__label),
+.sim-input :deep(.q-field__native),
+.sim-input :deep(.q-field__append) {
+  color: var(--portal-on-primary);
 }
 
-.percentage-input :deep(.q-field__control) {
-  min-height: 25px;
-  height: 25px;
+.sim-input :deep(.q-field__control) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
-.percentage-input :deep(.q-field__native) {
-  font-size: 8px;
+.sim-loading {
+  text-align: center;
+  padding: 24px 0;
 }
 
-.cancellation-row {
+.sim-error {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.sim-breakdown {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.sim-line {
   display: flex;
   justify-content: space-between;
-
-  padding: 7px 0;
-
-  border-bottom: 1px solid #eceef3;
-
-  color: #555d70;
-
-  font-size: 8px;
+  gap: 12px;
+  font-size: 13px;
+  padding: 4px 0;
 }
 
-.cancellation-row strong {
-  color: #df454b;
+.sim-line strong {
+  font-weight: 700;
 }
 
-/* ==========================================================
-   BOTTOM SAVE BAR
-========================================================== */
+.line-surcharge { color: #fecaca; }
+.line-discount { color: #bbf7d0; }
 
-.bottom-save-bar {
+.sim-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sim-total strong {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.sim-btn {
+  font-weight: 600;
+}
+
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
-
-  margin-top: 13px;
-  padding: 7px 10px;
-
-  border: 1px solid #dce1eb;
-  border-radius: 6px;
-
-  background: #e9efff;
+  gap: 16px;
+  padding: 14px 24px;
+  background: var(--portal-card);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.06);
 }
 
-.change-message {
+.bottom-note {
   display: flex;
   align-items: center;
-  gap: 5px;
-
-  color: #697185;
-
-  font-size: 7px;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--portal-muted);
 }
 
 .bottom-actions {
   display: flex;
-  gap: 7px;
+  gap: 10px;
 }
 
-/* ==========================================================
-   RESPONSIVE
-========================================================== */
-
-@media (max-width: 1000px) {
-  .pricing-layout,
-  .vehicle-layout {
+@media (max-width: 1100px) {
+  .config-grid {
     grid-template-columns: 1fr;
-  }
-
-  .study-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .pricing-side,
-  .study-side {
-    display: grid;
-
-    grid-template-columns: 1fr 1fr;
-
-    gap: 13px;
-  }
-
-  .simulation-card,
-  .pricing-card + .pricing-card {
-    margin-top: 0;
   }
 }
 
-@media (max-width: 700px) {
-  .pricing-page {
-    padding: 0 12px 15px;
-  }
-
-  .page-header {
+@media (max-width: 768px) {
+  .pricing-header {
     flex-direction: column;
-    gap: 12px;
   }
 
   .header-actions {
     width: 100%;
   }
 
-  .header-actions .q-btn {
-    flex: 1;
+  .field-grid {
+    grid-template-columns: 1fr;
   }
 
-  .form-grid,
-  .vehicle-bottom-grid,
-  .pricing-side,
-  .study-side {
-    grid-template-columns: 1fr;
+  .rules-table-head,
+  .rules-table-row {
+    min-width: 640px;
   }
 
   .rules-table {
     overflow-x: auto;
   }
 
-  .rules-head,
-  .rules-row {
-    min-width: 600px;
-  }
-
-  .vehicle-table {
-    overflow-x: auto;
-  }
-
-  .vehicle-table-head,
-  .vehicle-table-row {
-    min-width: 650px;
-  }
-
-  .bottom-save-bar {
-    align-items: stretch;
+  .bottom-bar {
     flex-direction: column;
-    gap: 8px;
+    align-items: stretch;
   }
 
-  .bottom-actions {
-    justify-content: flex-end;
+  .role-discount-fields {
+    grid-template-columns: 1fr;
   }
 }
 </style>

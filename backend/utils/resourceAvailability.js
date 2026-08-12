@@ -106,25 +106,56 @@ export function bookingConflictsWithWindow(booking, { date, startTime, endTime }
 /**
  * Compute effective availability for a resource row + its bookings.
  * `inService` is the admin maintenance flag (DB `available` column).
+ * `viewerUserId` personalizes Booked vs Unavailable.
  */
-export function computeResourceAvailability(resource, bookings = [], window = {}, now = new Date()) {
+export function computeResourceAvailability(
+  resource,
+  bookings = [],
+  window = {},
+  now = new Date(),
+  viewerUserId = null,
+) {
   const inService = !!resource.available;
   const conflicting = bookings.filter((b) => bookingConflictsWithWindow(b, window, now));
-  const isBooked = conflicting.length > 0;
-  const available = inService && !isBooked;
+
+  const intervals = conflicting
+    .map((b) => ({
+      date: normalizeDate(b.date),
+      startTime: b.start_time || b.startTime || '',
+      endTime: b.end_time || b.endTime || '',
+      bookingId: b.booking_code || (b.id != null ? String(b.id) : null),
+      userId: b.user_id ?? b.userId ?? null,
+      isMine: viewerUserId != null && Number(b.user_id ?? b.userId) === Number(viewerUserId),
+    }))
+    .sort((a, b) => {
+      const dateCmp = String(a.date).localeCompare(String(b.date));
+      if (dateCmp !== 0) return dateCmp;
+      return String(a.startTime).localeCompare(String(b.startTime));
+    });
+
+  const bookedByCurrentUser = intervals.some((i) => i.isMine);
+  const bookedByOthers = intervals.some((i) => !i.isMine);
+  const isBooked = intervals.length > 0;
 
   let availabilityStatus = 'available';
   if (!inService) availabilityStatus = 'maintenance';
-  else if (isBooked) availabilityStatus = 'booked';
+  else if (bookedByCurrentUser) availabilityStatus = 'booked';
+  else if (bookedByOthers) availabilityStatus = 'unavailable';
 
-  const next = conflicting[0] || null;
+  const next = intervals[0] || null;
 
   return {
     inService,
     isBooked,
-    available,
+    bookedByCurrentUser,
+    bookedByOthers,
+    // Fully free for a new booking in this window.
+    available: inService && !isBooked,
+    // Owner already booked it; others cannot use Book Now while slots are taken.
+    canBook: inService && !isBooked,
     availabilityStatus,
-    activeBookingId: next ? next.booking_code || next.id || null : null,
-    activeBookingStatus: next ? next.status : null,
+    unavailableIntervals: intervals,
+    activeBookingId: next ? next.bookingId : null,
+    activeBookingStatus: conflicting[0] ? conflicting[0].status : null,
   };
 }

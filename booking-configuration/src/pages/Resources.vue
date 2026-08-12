@@ -328,8 +328,8 @@ onMounted(() => {
 
 .resources-page {
   min-height: 100%;
-  background: #f7f8fd;
-  color: #11182d;
+  background: var(--portal-muted-bg);
+  color: var(--portal-text);
 }
 
 /* ==========================================================
@@ -354,7 +354,7 @@ onMounted(() => {
 
 .page-header h1 {
   margin: 0;
-  color: #11182d;
+  color: var(--portal-text);
   font-size: 18px;
   font-weight: 700;
   line-height: 1.2;
@@ -362,7 +362,7 @@ onMounted(() => {
 
 .page-header p {
   margin: 4px 0 0;
-  color: #747d91;
+  color: var(--portal-muted);
   font-size: 9px;
 }
 
@@ -387,7 +387,7 @@ onMounted(() => {
   overflow: hidden;
   border: 1px solid #d5dae6;
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--portal-card);
 }
 
 /* ==========================================================
@@ -395,17 +395,17 @@ onMounted(() => {
    ========================================================== */
 
 .resources-table {
-  color: #1b243b;
+  color: var(--portal-text);
 }
 
 .resources-table :deep(thead tr) {
   height: 34px;
-  background: #f8f9fd;
+  background: var(--portal-muted-bg);
 }
 
 .resources-table :deep(th) {
   padding: 0 11px;
-  color: #28324a;
+  color: var(--portal-text-secondary);
   border-bottom: 1px solid #d9deea;
   font-size: 7px;
   font-weight: 600;
@@ -413,16 +413,16 @@ onMounted(() => {
 
 .resources-table :deep(tbody tr) {
   height: 39px;
-  background: #ffffff;
+  background: var(--portal-card);
 }
 
 .resources-table :deep(tbody tr:hover) {
-  background: #fafbff;
+  background: var(--portal-muted-bg);
 }
 
 .resources-table :deep(td) {
   padding: 0 11px;
-  color: #263047;
+  color: var(--portal-text);
   border-bottom: 1px solid #e0e3eb;
   font-size: 8px;
 }
@@ -432,18 +432,18 @@ onMounted(() => {
    ========================================================== */
 
 .resource-name {
-  color: #17203a;
+  color: var(--portal-text);
   font-size: 8px;
   font-weight: 500;
 }
 
 .resource-type {
-  color: #606a80;
+  color: var(--portal-muted);
   font-size: 8px;
 }
 
 .capacity-value {
-  color: #283249;
+  color: var(--portal-text-secondary);
   font-size: 8px;
 }
 
@@ -454,7 +454,7 @@ onMounted(() => {
 .status-active {
   padding: 3px 7px;
   border-radius: 10px;
-  color: #ffffff;
+  color: var(--portal-on-primary);
   background: #07966c;
   font-size: 6px;
   font-weight: 650;
@@ -482,7 +482,7 @@ onMounted(() => {
 
   height: 24px;
 
-  color: #27314a;
+  color: var(--portal-text);
 }
 
 .edit-action:hover {
@@ -510,13 +510,13 @@ onMounted(() => {
 
   min-height: 250px;
 
-  color: #a1a7b5;
+  color: var(--portal-muted);
 }
 
 .empty-title {
   margin-top: 8px;
 
-  color: #596176;
+  color: var(--portal-muted);
 
   font-size: 10px;
 

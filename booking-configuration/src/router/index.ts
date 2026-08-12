@@ -24,6 +24,7 @@ import NotificationsPage from '@/pages/Notifications.vue';
 import UserSettingsPage from '@/pages/UserSettings.vue';
 import ErrorNotFound from '@/pages/ErrorNotFound.vue';
 import { useStudyroomStore } from '@/stores/studyroom-store';
+import type { RouteNavMeta } from '@/types/navigation';
 
 export default defineRouter((/* { store, ssrContext } */) => {
   const createHistory = import.meta.env.QUASAR_SERVER
@@ -38,14 +39,22 @@ export default defineRouter((/* { store, ssrContext } */) => {
     { path: '/register', component: RegisterPage, meta: { public: true } },
 
     // User routes
-    { path: '/dashboard', component: UserDashboardPage, meta: { requiresAuth: true } },
+    {
+      path: '/dashboard',
+      component: UserDashboardPage,
+      meta: { requiresAuth: true, nav: { newBooking: true, searchPlaceholder: 'Search bookings...' } satisfies RouteNavMeta },
+    },
     {
       path: '/browse-rooms',
       name: 'browse-rooms',
       component: BrowseRooms,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, nav: { newBooking: true, searchPlaceholder: 'Search rooms...' } satisfies RouteNavMeta },
     },
-    { path: '/my-bookings', component: MyBookings, meta: { requiresAuth: true } },
+    {
+      path: '/my-bookings',
+      component: MyBookings,
+      meta: { requiresAuth: true, nav: { searchPlaceholder: 'Search bookings...' } satisfies RouteNavMeta },
+    },
     { path: '/profile', component: ProfilePage, meta: { requiresAuth: true } },
     { path: '/notifications', component: NotificationsPage, meta: { requiresAuth: true } },
     { path: '/user-settings', component: UserSettingsPage, meta: { requiresAuth: true } },
@@ -54,33 +63,57 @@ export default defineRouter((/* { store, ssrContext } */) => {
     {
       path: '/admin-dashboard',
       component: AdminDashboard,
-      meta: { requiresAuth: true, roles: ['admin'] },
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+        nav: { exportReport: true, newResource: true, searchPlaceholder: 'Search portal...' } satisfies RouteNavMeta,
+      },
     },
     {
       path: '/bookings',
       component: BookingsPage,
-      meta: { requiresAuth: true, roles: ['admin'] },
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+        nav: { exportReport: true, searchPlaceholder: 'Search bookings...' } satisfies RouteNavMeta,
+      },
     },
     {
       path: '/resource-types',
       component: ResourceTypes,
-      meta: { requiresAuth: true, roles: ['admin'] },
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+        nav: { newResource: true, searchPlaceholder: 'Search resource types...' } satisfies RouteNavMeta,
+      },
     },
     {
       path: '/manage-resources',
       component: ManageResources,
-      meta: { requiresAuth: true, roles: ['admin'] },
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+        nav: { exportReport: true, newResource: true, searchPlaceholder: 'Search resources...' } satisfies RouteNavMeta,
+      },
     },
     {
       path: '/pricing-rules',
       name: 'pricing-rules',
       component: PricingRules,
-      meta: { requiresAuth: true, roles: ['admin'] },
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+        nav: { searchPlaceholder: 'Search pricing rules...' } satisfies RouteNavMeta,
+      },
     },
     {
       path: '/reports',
       component: Reports,
-      meta: { requiresAuth: true, roles: ['admin'] },
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+        nav: { exportReport: true, searchPlaceholder: 'Search reports...' } satisfies RouteNavMeta,
+      },
     },
     {
       path: '/settings',

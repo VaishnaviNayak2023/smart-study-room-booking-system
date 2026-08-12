@@ -15,9 +15,22 @@ export type Resource = ResourceFormData & {
   /** Effective bookable state: in service and not occupied by an active booking. */
   inService?: boolean;
   isBooked?: boolean;
-  availabilityStatus?: 'available' | 'booked' | 'maintenance';
+  bookedByCurrentUser?: boolean;
+  bookedByOthers?: boolean;
+  canBook?: boolean;
+  availabilityStatus?: 'available' | 'booked' | 'maintenance' | 'unavailable';
+  unavailableIntervals?: Array<{
+    date: string;
+    startTime: string;
+    endTime: string;
+    bookingId?: string | null;
+    isMine?: boolean;
+  }>;
   activeBookingId?: string | null;
   activeBookingStatus?: string | null;
+  hourlyRate?: number;
+  currency?: string;
+  freeFirstHour?: boolean;
 };
 
 export type ResourceTypeFormData = {

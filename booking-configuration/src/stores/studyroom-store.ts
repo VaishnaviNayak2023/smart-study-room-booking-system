@@ -12,6 +12,8 @@ export interface User {
   email: string;
   name: string;
   role: 'admin' | 'user';
+  phone?: string;
+  phoneCountryCode?: string;
 }
 
 interface LoginResult {
@@ -63,10 +65,12 @@ export const useStudyroomStore = defineStore('studyroom', {
       }
     },
 
-async login(email: string, password: string, role: 'admin' | 'user') {
+    async login(email: string, password: string, role?: 'admin' | 'user') {
       this.loading = true;
       try {
-        const { data } = await api.post<LoginResult>('/auth/login', { email, password, role });
+        const body: { email: string; password: string; role?: string } = { email, password };
+        if (role) body.role = role;
+        const { data } = await api.post<LoginResult>('/auth/login', body);
         this.currentUser = data.user;
         this.authToken = data.token;
         setToken(data.token);
@@ -77,7 +81,14 @@ async login(email: string, password: string, role: 'admin' | 'user') {
       }
     },
 
-    async register(email: string, password: string, name = '', role: 'admin' | 'user' = 'user') {
+    async register(
+      email: string,
+      password: string,
+      name = '',
+      role: 'admin' | 'user' = 'user',
+      phone = '',
+      phoneCountryCode = '',
+    ) {
       this.loading = true;
       try {
         const { data } = await api.post<LoginResult>('/auth/register', {
@@ -85,6 +96,8 @@ async login(email: string, password: string, role: 'admin' | 'user') {
           password,
           name,
           role,
+          phone,
+          phoneCountryCode,
         });
         this.currentUser = data.user;
         this.authToken = data.token;
@@ -106,6 +119,8 @@ async login(email: string, password: string, role: 'admin' | 'user') {
       name?: string;
       currentPassword?: string;
       newPassword?: string;
+      phone?: string;
+      phoneCountryCode?: string;
     }): Promise<User> {
       const { data } = await api.put<{ user: User }>('/auth/profile', payload);
       this.currentUser = data.user;

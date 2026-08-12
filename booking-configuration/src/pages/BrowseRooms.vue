@@ -50,18 +50,9 @@
           <div v-else class="image-placeholder">
             <q-icon :name="resourceIcon(resource)" size="42px" />
           </div>
-          <div
-            class="status-pill"
-            :class="resource.available ? 'available' : resource.availabilityStatus === 'maintenance' ? 'maintenance' : 'booked'"
-          >
+          <div class="status-pill" :class="statusPillClass(resource)">
             <span class="dot" />
-            {{
-              resource.available
-                ? 'Available'
-                : resource.availabilityStatus === 'maintenance'
-                  ? 'Unavailable'
-                  : 'Unavailable'
-            }}
+            {{ statusPillLabel(resource) }}
           </div>
         </div>
 
@@ -76,22 +67,40 @@
           <div v-if="resourceTags(resource).length" class="tag-list">
             <span v-for="tag in resourceTags(resource)" :key="tag" class="tag">{{ tag }}</span>
           </div>
+          <div v-if="busyIntervals(resource).length" class="busy-intervals">
+            <div class="busy-title">
+              <q-icon name="event_busy" size="14px" />
+              Unavailable intervals
+            </div>
+            <div
+              v-for="(slot, index) in busyIntervals(resource)"
+              :key="`${resource.id}-${slot.date}-${slot.startTime}-${index}`"
+              class="busy-slot"
+            >
+              {{ formatInterval(slot) }}
+              <span v-if="slot.isMine" class="mine-tag">Your booking</span>
+            </div>
+          </div>
           <div class="space-footer">
-            <div class="price">{{ formatAmount(hourlyRate) }}/hr</div>
+            <div class="price">{{ formatAmount(resourceHourlyRate(resource)) }}/hr</div>
             <q-btn
               unelevated
               no-caps
-              :disable="!resource.available"
-              :label="resource.available ? 'Book Now' : 'Unavailable'"
+              :disable="!canBookResource(resource)"
+              :label="actionLabel(resource)"
               class="book-btn"
-              :class="{ unavailable: !resource.available }"
+              :class="{ unavailable: !canBookResource(resource) }"
               @click="openBooking(resource)"
             />
           </div>
         </q-card-section>
       </q-card>
     </div>
-    <div v-else class="portal-empty">
+    <div v-else-if="!resources.length" class="portal-empty">
+      <q-icon name="meeting_room" size="32px" />
+      No spaces available yet. An admin needs to create resource types and rooms in Manage Resources.
+    </div>
+    <div v-else-if="!visibleResources.length" class="portal-empty">
       <q-icon name="search_off" size="32px" />
       No spaces match the current filters.
     </div>
@@ -189,6 +198,10 @@
               />
             </template>
 
+            <div v-if="minimumDurationHours > 0" class="field-help q-mb-sm">
+              Minimum booking duration: {{ minimumDurationLabel }}
+            </div>
+            <div v-if="quoteError" class="field-help text-negative q-mb-sm">{{ quoteError }}</div>
             <div class="price-summary">
               <div>
                 <div class="summary-title">Booking Summary</div>
@@ -196,7 +209,7 @@
               </div>
               <div class="summary-total">
                 <div class="summary-sub">Estimated Total</div>
-                <strong>{{ formatAmount(total) }}</strong>
+                <strong>{{ formatAmount(estimatedTotal) }}</strong>
               </div>
             </div>
 
@@ -209,12 +222,14 @@
               icon-right="arrow_forward"
               class="confirm-button"
               :loading="submitting"
-              :disable="duration <= 0"
+              :disable="duration <= 0 || quoteLoading || !!quoteError"
             />
           </q-form>
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <BookingReceiptDialog v-model="receiptOpen" :booking-code="receiptBookingCode" />
   </q-page>
 </template>
 
@@ -223,9 +238,18 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useQuasar } from 'quasar';
 import api from '@/services/api';
-import { appConfig } from '@/config/app';
+import BookingReceiptDialog from '@/components/user/BookingReceiptDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 import { useNotificationsStore } from '@/stores/notifications-store';
+import { useSettingsStore } from '@/stores/settings-store';
+
+type BusyInterval = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  bookingId?: string | null;
+  isMine?: boolean;
+};
 
 type Resource = {
   id: number;
@@ -238,24 +262,43 @@ type Resource = {
   image: string;
   inService?: boolean;
   isBooked?: boolean;
+  bookedByCurrentUser?: boolean;
+  bookedByOthers?: boolean;
+  canBook?: boolean;
   availabilityStatus?: string;
+  unavailableIntervals?: BusyInterval[];
+  hourlyRate?: number;
+  currency?: string;
+  freeFirstHour?: boolean;
 };
 type AddOn = { id: string; label: string; amount: number };
-type Pricing = { hourlyRate?: number; freeFirstHour?: boolean; currency?: string; addOns?: AddOn[] };
+type Pricing = {
+  hourlyRate?: number;
+  freeFirstHour?: boolean;
+  currency?: string;
+  addOns?: AddOn[];
+  minimumDuration?: string | number;
+};
 
 const $q = useQuasar();
 const route = useRoute();
 const notificationsStore = useNotificationsStore();
 const dashboardEvents = useDashboardEvents();
+const settingsStore = useSettingsStore();
 const today = new Date().toISOString().slice(0, 10);
 
 const resources = ref<Resource[]>([]);
 const resourceTypeNames = ref<string[]>([]);
 const resourceTypeIcons = ref<Record<string, string>>({});
 const pricing = ref<Pricing>({});
-const loading = ref(false);
+const estimatedTotal = ref(0);
+const quoteLoading = ref(false);
+const quoteError = ref('');
+const loading = ref(true);
 const error = ref('');
 const submitting = ref(false);
+const receiptOpen = ref(false);
+const receiptBookingCode = ref<string | null>(null);
 const search = ref(typeof route.query.q === 'string' ? route.query.q : '');
 const draftType = ref<string | null>(null);
 const draftDate = ref(today);
@@ -303,7 +346,9 @@ const addOns = computed(() =>
 const addOnOptions = computed(() =>
   addOns.value.map((item) => ({ label: `${item.label} · ${formatAmount(item.amount)}`, value: item.id })),
 );
-const hourlyRate = computed(() => Number(pricing.value.hourlyRate) || 0);
+function resourceHourlyRate(resource: Resource) {
+  return Number(resource.hourlyRate) || 0;
+}
 
 const visibleResources = computed(() => {
   const query = search.value.trim().toLocaleLowerCase();
@@ -325,22 +370,101 @@ const duration = computed(() => {
   return start === null || end === null || end <= start ? 0 : (end - start) / 60;
 });
 const durationLabel = computed(() => `${duration.value} ${duration.value === 1 ? 'hour' : 'hours'}`);
-const subtotal = computed(() => {
-  const rate = hourlyRate.value;
-  const billableHours = Math.max(duration.value - (pricing.value.freeFirstHour ? 1 : 0), 0);
-  return billableHours * rate;
+
+function parseMinimumDurationHours(value: string | number | undefined): number {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+  const match = String(value).trim().toLowerCase().match(/(\d+(?:\.\d+)?)/);
+  return match ? Math.max(0, Number(match[1])) : 0;
+}
+
+const minimumDurationHours = computed(() => parseMinimumDurationHours(pricing.value.minimumDuration));
+const minimumDurationLabel = computed(() => {
+  const hours = minimumDurationHours.value;
+  if (hours <= 0) return '';
+  return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 });
-const addOnTotal = computed(() =>
-  addOns.value
-    .filter((item) => booking.value.addOns.includes(item.id))
-    .reduce((sum, item) => sum + Number(item.amount), 0),
-);
-const total = computed(() => subtotal.value + addOnTotal.value);
+
+async function refreshQuote() {
+  if (!selectedResource.value || duration.value <= 0) {
+    estimatedTotal.value = 0;
+    quoteError.value = '';
+    return;
+  }
+  quoteLoading.value = true;
+  quoteError.value = '';
+  try {
+    const { data } = await api.post<{
+      breakdown: { total: number; currency?: string };
+    }>('/pricing-rules/calculate', {
+      resourceId: selectedResource.value.id,
+      resourceType: selectedResource.value.type,
+      date: booking.value.date,
+      startTime: booking.value.startTime,
+      endTime: booking.value.endTime,
+      addOnIds: booking.value.addOns,
+    });
+    estimatedTotal.value = Number(data.breakdown?.total) || 0;
+  } catch (err: unknown) {
+    estimatedTotal.value = 0;
+    const message =
+      typeof err === 'object' && err && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+    quoteError.value = message || 'Unable to calculate price. Adjust your booking time and try again.';
+  } finally {
+    quoteLoading.value = false;
+  }
+}
 
 function timeToMinutes(value: string): number | null {
   const [hours = Number.NaN, minutes = Number.NaN] = value.split(':').map(Number);
   return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : null;
 }
+
+function busyIntervals(resource: Resource): BusyInterval[] {
+  return Array.isArray(resource.unavailableIntervals) ? resource.unavailableIntervals : [];
+}
+
+function statusPillLabel(resource: Resource) {
+  if (resource.availabilityStatus === 'booked' || resource.bookedByCurrentUser) return 'Booked';
+  if (resource.availabilityStatus === 'maintenance' || resource.inService === false) return 'Unavailable';
+  if (resource.availabilityStatus === 'unavailable' || resource.bookedByOthers) return 'Unavailable';
+  return resource.available ? 'Available' : 'Unavailable';
+}
+
+function statusPillClass(resource: Resource) {
+  const label = statusPillLabel(resource);
+  if (label === 'Available') return 'available';
+  if (label === 'Booked') return 'booked';
+  return 'unavailable';
+}
+
+function canBookResource(resource: Resource) {
+  if (typeof resource.canBook === 'boolean') return resource.canBook;
+  return !!resource.available;
+}
+
+function actionLabel(resource: Resource) {
+  if (resource.bookedByCurrentUser || resource.availabilityStatus === 'booked') return 'Booked';
+  if (!canBookResource(resource)) return 'Unavailable';
+  return 'Book Now';
+}
+
+function formatInterval(slot: BusyInterval) {
+  const dateLabel = slot.date
+    ? new Date(`${slot.date}T00:00:00`).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : '';
+  const timeLabel =
+    slot.startTime && slot.endTime ? `${slot.startTime} - ${slot.endTime}` : slot.startTime || slot.endTime || '';
+  if (dateLabel && timeLabel) return `${dateLabel} · ${timeLabel}`;
+  return dateLabel || timeLabel || 'Reserved';
+}
+
 function resourceIcon(resource: Resource) {
   const fromType = resourceTypeIcons.value[resource.type];
   if (fromType) return fromType;
@@ -354,12 +478,7 @@ function resourceTags(resource: Resource) {
     .slice(0, 4);
 }
 function formatAmount(value: number) {
-  const currency = pricing.value.currency || appConfig.defaultCurrency || 'USD';
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
+  return settingsStore.formatMoney(value);
 }
 function applyFilters() {
   appliedType.value = draftType.value;
@@ -378,6 +497,19 @@ function openBooking(resource: Resource) {
     addOns: [],
   };
   bookingDialog.value = true;
+  void loadPricingForResource(resource);
+}
+
+async function loadPricingForResource(resource: Resource) {
+  try {
+    const { data } = await api.get<{ pricing: Pricing }>('/pricing-rules/resources', {
+      params: { resourceId: resource.id, resourceType: resource.type },
+    });
+    pricing.value = data.pricing || {};
+    void refreshQuote();
+  } catch {
+    pricing.value = {};
+  }
 }
 
 async function loadData() {
@@ -388,22 +520,38 @@ async function loadData() {
     const date = draftDate.value || booking.value.date || today;
     if (date) resourceParams.date = date;
 
-    const [resourcesResponse, pricingResponse, typesResponse] = await Promise.all([
-      api.get<{ resources: Resource[] }>('/resources', { params: resourceParams }),
-      api.get<{ pricing: Pricing }>('/pricing-rules/resources'),
+    // Load rooms first so pricing failures cannot hang the page forever.
+    const resourcesResponse = await api.get<{ resources: Resource[] }>('/resources', {
+      params: resourceParams,
+    });
+    resources.value = Array.isArray(resourcesResponse.data?.resources)
+      ? resourcesResponse.data.resources
+      : [];
+
+    const [typesResult] = await Promise.allSettled([
       api.get<{ resourceTypes: Array<{ name: string; icon?: string }> }>('/resource-types'),
     ]);
-    resources.value = resourcesResponse.data.resources;
-    pricing.value = pricingResponse.data.pricing || {};
-    const types = typesResponse.data.resourceTypes || [];
-    resourceTypeNames.value = types.map((type) => type.name).filter(Boolean);
-    const icons: Record<string, string> = {};
-    for (const type of types) {
-      if (type.name) icons[type.name] = type.icon || 'category';
+
+    if (typesResult.status === 'fulfilled') {
+      const types = typesResult.value.data.resourceTypes || [];
+      resourceTypeNames.value = types.map((type) => type.name).filter(Boolean);
+      const icons: Record<string, string> = {};
+      for (const type of types) {
+        if (type.name) icons[type.name] = type.icon || 'category';
+      }
+      resourceTypeIcons.value = icons;
+    } else {
+      resourceTypeNames.value = [];
+      resourceTypeIcons.value = {};
     }
-    resourceTypeIcons.value = icons;
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Unable to load spaces.';
+  } catch (err: unknown) {
+    const ax = err as { response?: { data?: { message?: string }; status?: number }; message?: string };
+    error.value =
+      ax.response?.data?.message ||
+      (ax.response?.status ? `Unable to load spaces (HTTP ${ax.response.status}).` : null) ||
+      ax.message ||
+      'Unable to load spaces.';
+    resources.value = [];
   } finally {
     loading.value = false;
   }
@@ -414,21 +562,30 @@ async function confirmBooking() {
     $q.notify({ type: 'warning', message: 'Choose an end time after the start time.' });
     return;
   }
+  if (minimumDurationHours.value > 0 && duration.value < minimumDurationHours.value) {
+    $q.notify({
+      type: 'warning',
+      message: `Booking duration must be at least ${minimumDurationLabel.value}.`,
+    });
+    return;
+  }
   submitting.value = true;
   try {
-    await api.post('/bookings', {
+    const { data } = await api.post<{ booking: { id: string } }>('/bookings', {
       resource: selectedResource.value.name,
       resourceId: selectedResource.value.id,
       date: booking.value.date,
       time: booking.value.startTime,
       startTime: booking.value.startTime,
       endTime: booking.value.endTime,
-      amount: total.value.toFixed(2),
+      addOnIds: booking.value.addOns,
       purpose: booking.value.purpose,
       notes: booking.value.notes,
     });
     $q.notify({ type: 'positive', message: 'Booking confirmed.' });
     bookingDialog.value = false;
+    receiptBookingCode.value = data.booking?.id || null;
+    receiptOpen.value = !!receiptBookingCode.value;
     emitDashboardRefresh();
     await notificationsStore.refreshUnread();
     await loadData();
@@ -449,7 +606,22 @@ watch(
     if (!endTimeOptions.value.includes(booking.value.endTime)) {
       booking.value.endTime = endTimeOptions.value[0] || '';
     }
+    void refreshQuote();
   },
+);
+
+watch(
+  () => [
+    booking.value.date,
+    booking.value.endTime,
+    booking.value.addOns,
+    selectedResource.value?.id,
+    duration.value,
+  ],
+  () => {
+    void refreshQuote();
+  },
+  { deep: true },
 );
 
 watch(
@@ -481,12 +653,12 @@ onMounted(() => {
 
 .browse-header p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--portal-muted);
 }
 
 .filter-bar {
   border-radius: 14px;
-  border-color: #e5e7eb;
+  border-color: var(--portal-border);
   margin-bottom: 24px;
 }
 
@@ -500,7 +672,7 @@ onMounted(() => {
 .apply-btn {
   border-radius: 10px;
   min-height: 40px;
-  background: #1e3a8a;
+  background: var(--portal-primary);
 }
 
 .spaces-grid {
@@ -512,14 +684,14 @@ onMounted(() => {
 .space-card {
   overflow: hidden;
   border-radius: 14px;
-  border-color: #e5e7eb;
-  background: #fff;
+  border-color: var(--portal-border);
+  background: var(--portal-card);
 }
 
 .space-image-wrap {
   position: relative;
   height: 170px;
-  background: #e2e8f0;
+  background: var(--portal-image-bg);
 }
 
 .space-image,
@@ -531,7 +703,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1e3a8a;
+  color: var(--portal-primary);
   background: linear-gradient(135deg, #e0e7ff, #f8fafc);
 }
 
@@ -556,7 +728,7 @@ onMounted(() => {
 }
 
 .status-pill.available {
-  color: #15803d;
+  color: var(--portal-status-confirmed-text);
 }
 
 .status-pill.available .dot {
@@ -564,11 +736,57 @@ onMounted(() => {
 }
 
 .status-pill.booked {
-  color: #b91c1c;
+  color: var(--portal-status-booked-text);
 }
 
 .status-pill.booked .dot {
+  background: #3b82f6;
+}
+
+.status-pill.unavailable {
+  color: var(--portal-status-unavailable-text);
+}
+
+.status-pill.unavailable .dot {
   background: #ef4444;
+}
+
+.busy-intervals {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--portal-muted-bg);
+  border: 1px solid var(--portal-border);
+}
+
+.busy-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--portal-muted);
+  font-size: 12px;
+  font-weight: 650;
+  margin-bottom: 6px;
+}
+
+.busy-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--portal-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 0;
+}
+
+.mine-tag {
+  color: var(--portal-status-booked-text);
+  background: var(--portal-status-pending-bg);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .space-body {
@@ -592,13 +810,13 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 13px;
 }
 
 .space-description {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 13px;
   line-height: 1.45;
   display: -webkit-box;
@@ -617,9 +835,9 @@ onMounted(() => {
 .tag {
   padding: 4px 8px;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
-  color: #475569;
+  border: 1px solid var(--portal-border);
+  background: var(--portal-muted-bg);
+  color: var(--portal-text-secondary);
   font-size: 11px;
 }
 
@@ -633,18 +851,18 @@ onMounted(() => {
 
 .price {
   font-weight: 700;
-  color: #111827;
+  color: var(--portal-text);
 }
 
 .book-btn {
-  background: #1e3a8a;
-  color: #fff;
+  background: var(--portal-primary);
+  color: var(--portal-on-primary);
   border-radius: 10px;
 }
 
 .book-btn.unavailable {
-  background: #e2e8f0;
-  color: #64748b;
+  background: var(--portal-image-bg);
+  color: var(--portal-muted);
 }
 
 .booking-dialog {
@@ -677,8 +895,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eef2ff;
-  color: #1e3a8a;
+  background: var(--portal-primary-soft);
+  color: var(--portal-primary);
 }
 
 .amenity-row {
@@ -686,13 +904,13 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 6px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
 .dialog-desc {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 13px;
 }
 
@@ -703,13 +921,13 @@ onMounted(() => {
   margin: 14px 0 8px;
   font-size: 13px;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--portal-text);
 }
 
 .schedule-box {
   padding: 12px;
   border-radius: 12px;
-  background: #eef2ff;
+  background: var(--portal-primary-soft);
 }
 
 .time-fields {
@@ -721,7 +939,7 @@ onMounted(() => {
 }
 
 .to-label {
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
@@ -732,7 +950,7 @@ onMounted(() => {
   margin-top: 18px;
   padding: 14px;
   border-radius: 12px;
-  background: #f1f5f9;
+  background: var(--portal-summary-bg);
 }
 
 .summary-title {
@@ -741,7 +959,7 @@ onMounted(() => {
 
 .summary-sub {
   margin-top: 2px;
-  color: #64748b;
+  color: var(--portal-muted);
   font-size: 12px;
 }
 
@@ -752,7 +970,7 @@ onMounted(() => {
 .summary-total strong {
   display: block;
   margin-top: 2px;
-  color: #1e3a8a;
+  color: var(--portal-primary);
   font-size: 22px;
 }
 
