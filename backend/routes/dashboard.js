@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { hoursBetween } from '../utils/bookingMath.js';
+import { computeResourceAvailability } from '../utils/resourceAvailability.js';
 
 const router = Router();
 
@@ -62,10 +63,31 @@ function nextInLabel(booking) {
   return `Next in ${mins} min`;
 }
 
+async function countDynamicallyAvailableResources() {
+  const resources = await db.prepare('SELECT * FROM resources').all();
+  const bookings = await db
+    .prepare(
+      `SELECT id, booking_code, resource_id, resource, date, start_time, end_time, status
+       FROM bookings
+       WHERE status IN ('Pending', 'Confirmed')`,
+    )
+    .all();
+
+  let available = 0;
+  for (const resource of resources) {
+    const related = bookings.filter(
+      (b) => b.resource_id === resource.id || b.resource === resource.name,
+    );
+    const availability = computeResourceAvailability(resource, related, {});
+    if (availability.available) available += 1;
+  }
+  return available;
+}
+
 /* GET /api/dashboard — admin stats + recent bookings */
 router.get('/', authenticate, authorize('admin'), async (req, res) => {
   const totalResourcesRow = await db.prepare('SELECT COUNT(*) AS c FROM resources').get();
-  const availableResourcesRow = await db.prepare('SELECT COUNT(*) AS c FROM resources WHERE available = 1').get();
+  const availableResources = await countDynamicallyAvailableResources();
   const totalBookingsRow = await db.prepare('SELECT COUNT(*) AS c FROM bookings').get();
   const totalUsersRow = await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'user'").get();
   const pendingBookingsRow = await db.prepare("SELECT COUNT(*) AS c FROM bookings WHERE status = 'Pending'").get();
@@ -95,7 +117,7 @@ router.get('/', authenticate, authorize('admin'), async (req, res) => {
   res.json({
     stats: {
       totalResources: totalResourcesRow.c,
-      availableResources: availableResourcesRow.c,
+      availableResources,
       totalBookings: totalBookingsRow.c,
       todaysBookings: todaysBookingsRow.c,
       totalUsers: totalUsersRow.c,

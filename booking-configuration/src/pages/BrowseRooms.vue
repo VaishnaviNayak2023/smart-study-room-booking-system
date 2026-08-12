@@ -50,9 +50,18 @@
           <div v-else class="image-placeholder">
             <q-icon :name="resourceIcon(resource)" size="42px" />
           </div>
-          <div class="status-pill" :class="resource.available ? 'available' : 'booked'">
+          <div
+            class="status-pill"
+            :class="resource.available ? 'available' : resource.availabilityStatus === 'maintenance' ? 'maintenance' : 'booked'"
+          >
             <span class="dot" />
-            {{ resource.available ? 'Available' : 'Booked' }}
+            {{
+              resource.available
+                ? 'Available'
+                : resource.availabilityStatus === 'maintenance'
+                  ? 'Unavailable'
+                  : 'Unavailable'
+            }}
           </div>
         </div>
 
@@ -227,6 +236,9 @@ type Resource = {
   description: string;
   available: boolean;
   image: string;
+  inService?: boolean;
+  isBooked?: boolean;
+  availabilityStatus?: string;
 };
 type AddOn = { id: string; label: string; amount: number };
 type Pricing = { hourlyRate?: number; freeFirstHour?: boolean; currency?: string; addOns?: AddOn[] };
@@ -238,6 +250,8 @@ const dashboardEvents = useDashboardEvents();
 const today = new Date().toISOString().slice(0, 10);
 
 const resources = ref<Resource[]>([]);
+const resourceTypeNames = ref<string[]>([]);
+const resourceTypeIcons = ref<Record<string, string>>({});
 const pricing = ref<Pricing>({});
 const loading = ref(false);
 const error = ref('');
@@ -271,7 +285,7 @@ const endTimeOptions = computed(() => {
   return startIndex >= 0 ? timeOptions.slice(startIndex + 1) : timeOptions.slice(1);
 });
 const typeOptions = computed(() =>
-  [...new Set(resources.value.map((resource) => resource.type).filter(Boolean))].map((value) => ({
+  resourceTypeNames.value.map((value) => ({
     label: value,
     value,
   })),
@@ -328,8 +342,9 @@ function timeToMinutes(value: string): number | null {
   return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : null;
 }
 function resourceIcon(resource: Resource) {
-  const type = resource.type.toLocaleLowerCase();
-  return type.includes('lab') ? 'science' : type.includes('conference') ? 'groups' : 'meeting_room';
+  const fromType = resourceTypeIcons.value[resource.type];
+  if (fromType) return fromType;
+  return 'category';
 }
 function resourceTags(resource: Resource) {
   return resource.description
@@ -350,6 +365,7 @@ function applyFilters() {
   appliedType.value = draftType.value;
   appliedCapacity.value = draftCapacity.value;
   if (draftDate.value) booking.value.date = draftDate.value;
+  void loadData();
 }
 function openBooking(resource: Resource) {
   selectedResource.value = resource;
@@ -368,12 +384,24 @@ async function loadData() {
   loading.value = true;
   error.value = '';
   try {
-    const [resourcesResponse, pricingResponse] = await Promise.all([
-      api.get<{ resources: Resource[] }>('/resources'),
+    const resourceParams: Record<string, string> = {};
+    const date = draftDate.value || booking.value.date || today;
+    if (date) resourceParams.date = date;
+
+    const [resourcesResponse, pricingResponse, typesResponse] = await Promise.all([
+      api.get<{ resources: Resource[] }>('/resources', { params: resourceParams }),
       api.get<{ pricing: Pricing }>('/pricing-rules/resources'),
+      api.get<{ resourceTypes: Array<{ name: string; icon?: string }> }>('/resource-types'),
     ]);
     resources.value = resourcesResponse.data.resources;
     pricing.value = pricingResponse.data.pricing || {};
+    const types = typesResponse.data.resourceTypes || [];
+    resourceTypeNames.value = types.map((type) => type.name).filter(Boolean);
+    const icons: Record<string, string> = {};
+    for (const type of types) {
+      if (type.name) icons[type.name] = type.icon || 'category';
+    }
+    resourceTypeIcons.value = icons;
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unable to load spaces.';
   } finally {
@@ -403,6 +431,7 @@ async function confirmBooking() {
     bookingDialog.value = false;
     emitDashboardRefresh();
     await notificationsStore.refreshUnread();
+    await loadData();
   } catch (err: unknown) {
     const message =
       typeof err === 'object' && err && 'response' in err

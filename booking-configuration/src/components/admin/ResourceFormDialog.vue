@@ -15,8 +15,13 @@
             dense
             label="Type"
             :options="typeOptions"
-            use-input
-            new-value-mode="add-unique"
+            :disable="!typeOptions.length"
+            :hint="
+              typeOptions.length
+                ? 'Select a category from Resource Types'
+                : 'No resource types yet — create one under Resource Types first'
+            "
+            :rules="[(v) => !!v || 'Select a resource type']"
           />
           <div class="row q-col-gutter-md">
             <div class="col-6">
@@ -31,7 +36,17 @@
               />
             </div>
             <div class="col-6">
-              <q-toggle v-model="form.available" label="Available" color="primary" />
+              <q-select
+                v-model="serviceStatus"
+                outlined
+                dense
+                label="Status"
+                :options="serviceStatusOptions"
+                emit-value
+                map-options
+                :rules="[(v) => !!v || 'Status is required']"
+                hint="Unavailable = offline / maintenance"
+              />
             </div>
           </div>
           <q-input v-model="form.location" outlined dense label="Location" />
@@ -39,7 +54,15 @@
           <q-input v-model="form.image" outlined dense label="Image URL" />
           <div class="row justify-end q-gutter-sm">
             <q-btn outline no-caps label="Cancel" @click="emit('update:modelValue', false)" />
-            <q-btn unelevated no-caps color="primary" type="submit" :label="isEdit ? 'Save Changes' : 'Create Resource'" :loading="saving" />
+            <q-btn
+              unelevated
+              no-caps
+              color="primary"
+              type="submit"
+              :label="isEdit ? 'Save Changes' : 'Create Resource'"
+              :loading="saving"
+              :disable="!typeOptions.length"
+            />
           </div>
         </q-form>
       </q-card-section>
@@ -66,6 +89,12 @@ const emit = defineEmits<{
 }>();
 
 const saving = ref(false);
+const serviceStatusOptions = [
+  { label: 'Available', value: 'available' },
+  { label: 'Unavailable', value: 'unavailable' },
+];
+const serviceStatus = ref<'available' | 'unavailable'>('available');
+
 const form = reactive<ResourceFormData>({
   name: '',
   type: '',
@@ -78,45 +107,89 @@ const form = reactive<ResourceFormData>({
 
 const isEdit = computed(() => !!props.resource?.id);
 
+function resetForm() {
+  form.name = '';
+  form.type = props.typeOptions[0] || '';
+  form.capacity = 1;
+  form.location = '';
+  form.description = '';
+  form.available = true;
+  form.image = '';
+  serviceStatus.value = 'available';
+}
+
+function applyResource(resource: ResourceFormData) {
+  form.name = resource.name;
+  form.type = resource.type;
+  form.capacity = resource.capacity;
+  form.location = resource.location;
+  form.description = resource.description;
+  form.available = resource.available !== false;
+  form.image = resource.image;
+  serviceStatus.value = form.available ? 'available' : 'unavailable';
+}
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (!open) return;
+    if (!props.resource) {
+      resetForm();
+      return;
+    }
+    applyResource(props.resource);
+  },
+);
+
 watch(
   () => props.resource,
   (resource) => {
+    if (!props.modelValue) return;
     if (!resource) {
-      form.name = '';
-      form.type = props.typeOptions[0] || '';
-      form.capacity = 1;
-      form.location = '';
-      form.description = '';
-      form.available = true;
-      form.image = '';
+      resetForm();
       return;
     }
-    form.name = resource.name;
-    form.type = resource.type;
-    form.capacity = resource.capacity;
-    form.location = resource.location;
-    form.description = resource.description;
-    form.available = resource.available;
-    form.image = resource.image;
+    applyResource(resource);
   },
-  { immediate: true },
 );
 
+watch(serviceStatus, (value) => {
+  form.available = value === 'available';
+});
+
 async function submit() {
+  if (!form.type) {
+    Notify.create({ type: 'warning', message: 'Select a resource type.' });
+    return;
+  }
+  form.available = serviceStatus.value === 'available';
   saving.value = true;
   try {
+    const payload = {
+      name: form.name,
+      type: form.type,
+      capacity: form.capacity,
+      location: form.location,
+      description: form.description,
+      image: form.image,
+      available: form.available,
+    };
     if (isEdit.value && props.resource?.id) {
-      await api.put(`/resources/${props.resource.id}`, { ...form });
+      await api.put(`/resources/${props.resource.id}`, payload);
       Notify.create({ type: 'positive', message: 'Resource updated.' });
     } else {
-      await api.post('/resources', { ...form });
+      await api.post('/resources', payload);
       Notify.create({ type: 'positive', message: 'Resource created.' });
     }
     emitDashboardRefresh();
     emit('saved');
     emit('update:modelValue', false);
-  } catch {
-    Notify.create({ type: 'negative', message: 'Failed to save resource.' });
+  } catch (err) {
+    const ax = err as { response?: { data?: { message?: string } } };
+    Notify.create({
+      type: 'negative',
+      message: ax.response?.data?.message || 'Failed to save resource.',
+    });
   } finally {
     saving.value = false;
   }

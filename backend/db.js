@@ -147,6 +147,13 @@ async function ensureSchema() {
 
   await ensureColumn('bookings', 'purpose', "VARCHAR(255) NOT NULL DEFAULT ''");
   await ensureColumn('bookings', 'notes', 'TEXT NULL');
+  // Tracks last status change for Confirmed Today / avg response metrics.
+  await ensureColumn('bookings', 'status_updated_at', 'TIMESTAMP NULL');
+  await db.exec(
+    `UPDATE bookings
+     SET status_updated_at = COALESCE(status_updated_at, created_at, CURRENT_TIMESTAMP)
+     WHERE status_updated_at IS NULL`,
+  );
 }
 
 async function ensureColumn(table, column, definition) {

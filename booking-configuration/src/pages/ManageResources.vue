@@ -35,7 +35,9 @@
           </q-td>
         </template>
         <template #body-cell-status="{ row }">
-          <q-td><span class="status-chip" :class="row.available ? 'available' : 'maintenance'">{{ row.available ? 'Available' : 'Unavailable' }}</span></q-td>
+          <q-td>
+            <span class="status-chip" :class="statusChipClass(row)">{{ statusChipLabel(row) }}</span>
+          </q-td>
         </template>
         <template #body-cell-actions="{ row }">
           <q-td align="right">
@@ -67,13 +69,14 @@ import api from '@/services/api';
 import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
 import ResourceFormDialog from '@/components/admin/ResourceFormDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
-import type { Resource, ResourceFormData } from '@/types/resources';
+import type { Resource, ResourceFormData, ResourceType } from '@/types/resources';
 
 const route = useRoute();
 const dashboardEvents = useDashboardEvents();
 const loading = ref(true);
 const error = ref('');
 const resources = ref<Resource[]>([]);
+const resourceTypes = ref<ResourceType[]>([]);
 const search = ref(typeof route.query.q === 'string' ? route.query.q : '');
 const typeFilter = ref<string | null>(null);
 const statusFilter = ref('All Statuses');
@@ -88,9 +91,40 @@ const deleteMessage = computed(() =>
   `Are you sure you want to delete "${deleting.value?.name || 'this resource'}"?`,
 );
 
-const statusOptions = ['All Statuses', 'Available', 'Unavailable'];
-const typeOptions = computed(() => [...new Set(resources.value.map((r) => r.type).filter(Boolean))]);
-const typeFilterOptions = computed(() => typeOptions.value);
+const statusOptions = ['All Statuses', 'Available', 'Booked', 'Unavailable'];
+const typeOptions = computed(() => {
+  const names = resourceTypes.value.map((t) => t.name).filter(Boolean);
+  // Keep edit workable if an older resource references a removed category name.
+  const current = editing.value?.type;
+  if (current && !names.includes(current)) return [...names, current];
+  return names;
+});
+const typeFilterOptions = computed(() => resourceTypes.value.map((t) => t.name).filter(Boolean));
+const typeIconByName = computed(() => {
+  const map = new Map<string, string>();
+  for (const type of resourceTypes.value) {
+    if (type.name) map.set(type.name, type.icon || 'category');
+  }
+  return map;
+});
+
+function statusChipLabel(row: Resource) {
+  if (row.inService === false || row.availabilityStatus === 'maintenance') return 'Unavailable';
+  if (row.isBooked || row.availabilityStatus === 'booked') return 'Booked';
+  return 'Available';
+}
+
+function statusChipClass(row: Resource) {
+  const label = statusChipLabel(row);
+  if (label === 'Available') return 'available';
+  if (label === 'Booked') return 'booked';
+  return 'maintenance';
+}
+
+function matchesStatusFilter(row: Resource) {
+  if (statusFilter.value === 'All Statuses') return true;
+  return statusChipLabel(row) === statusFilter.value;
+}
 
 const columns = [
   { name: 'name', label: 'RESOURCE NAME', field: 'name', align: 'left' as const },
@@ -106,9 +140,7 @@ const filteredRows = computed(() => {
   return resources.value.filter((res) => {
     const matchesSearch = [res.name, res.type, res.location, String(res.id)].join(' ').toLowerCase().includes(q);
     const matchesType = !typeFilter.value || res.type === typeFilter.value;
-    const matchesStatus =
-      statusFilter.value === 'All Statuses' ||
-      (statusFilter.value === 'Available' ? res.available : !res.available);
+    const matchesStatus = matchesStatusFilter(res);
     return matchesSearch && matchesType && matchesStatus;
   });
 });
@@ -126,28 +158,44 @@ const pageLabel = computed(() => {
 });
 
 function resourceIcon(type: string) {
-  const t = type.toLowerCase();
-  if (t.includes('lab')) return 'science';
-  if (t.includes('transport') || t.includes('vehicle')) return 'directions_car';
-  if (t.includes('equipment') || t.includes('av')) return 'videocam';
-  return 'meeting_room';
+  return typeIconByName.value.get(type) || 'category';
+}
+
+async function loadResourceTypes() {
+  const { data } = await api.get<{ resourceTypes: ResourceType[] }>('/resource-types');
+  resourceTypes.value = data.resourceTypes || [];
 }
 
 async function loadResources() {
   loading.value = true;
   error.value = '';
   try {
-    const { data } = await api.get<{ resources: Resource[] }>('/resources');
-    resources.value = data.resources.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: r.type,
-      capacity: r.capacity,
-      location: r.location || '',
-      description: r.description || '',
-      available: r.available,
-      image: r.image || '',
-    }));
+    const [resourcesRes] = await Promise.all([
+      api.get<{ resources: Resource[] }>('/resources'),
+      loadResourceTypes(),
+    ]);
+    resources.value = (resourcesRes.data.resources || []).map((r) => {
+      const inService = r.inService ?? true;
+      const isBooked = !!r.isBooked;
+      const availabilityStatus =
+        r.availabilityStatus || (r.available ? 'available' : inService ? 'booked' : 'maintenance');
+      return {
+        id: r.id,
+        name: r.name,
+        type: r.type,
+        capacity: r.capacity,
+        location: r.location || '',
+        description: r.description || '',
+        image: r.image || '',
+        inService,
+        isBooked,
+        availabilityStatus,
+        activeBookingId: r.activeBookingId ?? null,
+        activeBookingStatus: r.activeBookingStatus ?? null,
+        // Effective bookable state from API (in service + not booked).
+        available: !!r.available,
+      };
+    });
   } catch {
     error.value = 'Unable to load resources.';
   } finally {
@@ -155,9 +203,40 @@ async function loadResources() {
   }
 }
 
-function openCreate() { editing.value = null; formOpen.value = true; }
-function openEdit(row: Resource) { editing.value = { ...row }; formOpen.value = true; }
-function askDelete(row: Resource) { deleting.value = row; deleteOpen.value = true; }
+async function openCreate() {
+  editing.value = null;
+  try {
+    await loadResourceTypes();
+  } catch {
+    Notify.create({ type: 'negative', message: 'Unable to load resource types.' });
+  }
+  formOpen.value = true;
+}
+
+async function openEdit(row: Resource) {
+  editing.value = {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    capacity: row.capacity,
+    location: row.location,
+    description: row.description,
+    // Toggle controls admin maintenance flag, not booking-derived state.
+    available: row.inService ?? true,
+    image: row.image,
+  };
+  try {
+    await loadResourceTypes();
+  } catch {
+    Notify.create({ type: 'negative', message: 'Unable to load resource types.' });
+  }
+  formOpen.value = true;
+}
+
+function askDelete(row: Resource) {
+  deleting.value = row;
+  deleteOpen.value = true;
+}
 
 async function doDelete() {
   if (!deleting.value) return;
@@ -175,12 +254,32 @@ async function doDelete() {
   }
 }
 
-watch([search, typeFilter, statusFilter, rowsPerPage], () => { page.value = 1; });
-watch(() => route.query.q, (value) => { search.value = typeof value === 'string' ? value : ''; });
-watch(() => route.query.action, (value) => { if (value === 'new') openCreate(); });
-watch(() => dashboardEvents.version, () => { void loadResources(); });
+watch([search, typeFilter, statusFilter, rowsPerPage], () => {
+  page.value = 1;
+});
+watch(
+  () => route.query.q,
+  (value) => {
+    search.value = typeof value === 'string' ? value : '';
+  },
+);
+watch(
+  () => route.query.action,
+  (value) => {
+    if (value === 'new') void openCreate();
+  },
+);
+watch(
+  () => dashboardEvents.version,
+  () => {
+    void loadResources();
+  },
+);
 
-onMounted(() => { void loadResources(); if (route.query.action === 'new') openCreate(); });
+onMounted(() => {
+  void loadResources();
+  if (route.query.action === 'new') void openCreate();
+});
 </script>
 
 <style scoped>
@@ -196,7 +295,8 @@ onMounted(() => { void loadResources(); if (route.query.action === 'new') openCr
 .resource-id { color: #64748b; font-size: 11px; margin-top: 2px; }
 .status-chip { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .status-chip.available { background: #dcfce7; color: #15803d; }
-.status-chip.maintenance { background: #fee2e2; color: #b91c1c; }
+.status-chip.booked { background: #fee2e2; color: #b91c1c; }
+.status-chip.maintenance { background: #ffedd5; color: #c2410c; }
 .pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 13px; flex-wrap: wrap; gap: 8px; }
 .page-controls { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 700px) { .page-header { flex-direction: column; } }
