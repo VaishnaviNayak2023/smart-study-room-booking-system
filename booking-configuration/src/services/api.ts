@@ -49,6 +49,13 @@ export function setStoredUser(user: unknown): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+function redirectToLogin(): void {
+  const target = `${window.location.origin}${window.location.pathname}#/login`;
+  if (window.location.href !== target) {
+    window.location.assign(target);
+  }
+}
+
 // Attach the bearer token to every outgoing request.
 api.interceptors.request.use((config) => {
   const token = getToken();
@@ -64,8 +71,8 @@ api.interceptors.response.use(
 (error: Error & { response?: { status?: number } }) => {
     if (error.response?.status === 401) {
       clearToken();
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      if (!window.location.hash.startsWith('#/login')) {
+        redirectToLogin();
       }
     }
     return Promise.reject(error);

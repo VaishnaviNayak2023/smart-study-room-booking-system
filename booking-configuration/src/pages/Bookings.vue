@@ -424,7 +424,7 @@
     <q-dialog v-model="detailsOpen">
       <q-card v-if="selected" class="details-dialog">
         <q-card-section class="row items-center justify-between">
-          <div class="text-h6">{{ detailsMode === 'receipt' ? 'Booking Receipt' : 'Booking Details' }}</div>
+          <div class="text-h6">Booking Details</div>
           <q-btn flat round dense icon="close" @click="detailsOpen = false" />
         </q-card-section>
         <q-separator />
@@ -448,18 +448,10 @@
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat no-caps label="Close" @click="detailsOpen = false" />
-          <q-btn
-            v-if="detailsMode === 'receipt'"
-            unelevated
-            no-caps
-            color="primary"
-            icon="print"
-            label="Print Receipt"
-            @click="printReceipt"
-          />
         </q-card-actions>
       </q-card>
     </q-dialog>
+    <BookingReceiptDialog v-model="receiptOpen" :booking-code="receiptBookingCode" />
   </q-page>
 </template>
 
@@ -469,6 +461,7 @@ import { useRoute } from 'vue-router';
 import { Notify } from 'quasar';
 import api from '@/services/api';
 import ConfirmDialog from '@/components/user/ConfirmDialog.vue';
+import BookingReceiptDialog from '@/components/user/BookingReceiptDialog.vue';
 import ModifyBookingDialog from '@/components/user/ModifyBookingDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 
@@ -534,6 +527,8 @@ const detailsOpen = ref(false);
 const detailsMode = ref<'details' | 'receipt'>('details');
 const actionLoadingId = ref<string | null>(null);
 const resourceNames = ref<string[]>([]);
+const receiptOpen = ref(false);
+const receiptBookingCode = ref<string | null>(null);
 
 const stats = ref<BookingStats>({
   total: 0,
@@ -807,12 +802,8 @@ function openDetails(row: Booking) {
   detailsOpen.value = true;
 }
 function openReceipt(row: Booking) {
-  selected.value = row;
-  detailsMode.value = 'receipt';
-  detailsOpen.value = true;
-}
-function printReceipt() {
-  window.print();
+  receiptBookingCode.value = row.id;
+  receiptOpen.value = true;
 }
 
 async function doCancel() {
