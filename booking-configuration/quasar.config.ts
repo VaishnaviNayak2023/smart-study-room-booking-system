@@ -102,6 +102,11 @@ typescript: {
           changeOrigin: true,
           // ws: true,
         },
+        // Resource images are stored on the API host under /uploads.
+        '/uploads': {
+          target: process.env.API_TARGET || 'http://localhost:5006',
+          changeOrigin: true,
+        },
       },
     },
 

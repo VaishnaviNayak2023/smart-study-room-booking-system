@@ -1,9 +1,14 @@
 import './middleware/asyncHandler.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import env from './config/env.js';
 import db, { checkDatabase } from './db.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import authRoutes from './routes/auth.js';
 import resourceTypesRoutes from './routes/resourceTypes.js';
@@ -33,7 +38,12 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: '1mb' }));
+  // Allow small base64 image payloads when creating/updating resources.
+  app.use(express.json({ limit: '6mb' }));
+  const uploadsDir = path.join(__dirname, 'uploads');
+  // Public asset paths (direct) and /api/uploads (works through the Vite /api proxy).
+  app.use('/uploads', express.static(uploadsDir));
+  app.use('/api/uploads', express.static(uploadsDir));
 
   app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);

@@ -144,9 +144,19 @@ router.post('/calculate', authenticate, async (req, res) => {
     const general = pricingOverride.general && typeof pricingOverride.general === 'object'
       ? pricingOverride.general
       : parseJsonColumn((await db.prepare('SELECT data FROM pricing_rules WHERE context = ?').get('general'))?.data);
+
+    const hasContextOverride =
+      (pricingOverride.context && typeof pricingOverride.context === 'object') ||
+      Object.keys(pricingOverride).some(
+        (key) => key !== 'general' && key !== 'context' && pricingOverride[key] && typeof pricingOverride[key] === 'object',
+      );
+
     const slug = pricingContextKey(type);
     let specific = {};
-    if (pricingOverride.context && typeof pricingOverride.context === 'object') {
+    // General-only previews must not inherit a booking-system hourly rate from resourceId.
+    if (!hasContextOverride) {
+      specific = {};
+    } else if (pricingOverride.context && typeof pricingOverride.context === 'object') {
       specific = pricingOverride.context;
     } else if (slug && pricingOverride[slug] && typeof pricingOverride[slug] === 'object') {
       specific = pricingOverride[slug];

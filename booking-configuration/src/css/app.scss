@@ -62,10 +62,10 @@ body.body--dark {
   --portal-primary-soft: rgba(147, 197, 253, 0.12);
   --portal-text: #f1f5f9;
   --portal-text-secondary: #cbd5e1;
-  --portal-muted: #94a3b8;
+  --portal-muted: #cbd5e1;
   --portal-navbar: #111827;
   --portal-sidebar: #0f172a;
-  --portal-sidebar-active: rgba(147, 197, 253, 0.14);
+  --portal-sidebar-active: rgba(147, 197, 253, 0.18);
   --portal-input-bg: #1e293b;
   --portal-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   --portal-success: #4ade80;
@@ -75,7 +75,7 @@ body.body--dark {
   --portal-on-primary: #0f172a;
   --portal-image-bg: #334155;
   --portal-muted-bg: #0f172a;
-  --portal-summary-bg: #1e293b;
+  --portal-summary-bg: #243447;
   --portal-tag-bg: #0f172a;
   --portal-overlay: rgba(2, 6, 23, 0.72);
   --portal-auth-page-bg: #0b1220;
@@ -122,6 +122,13 @@ body {
   background: var(--portal-card) !important;
   color: var(--portal-text);
   border-color: var(--portal-border) !important;
+}
+
+.q-card.simulation-panel,
+.simulation-panel {
+  background: linear-gradient(165deg, #172554 0%, #1e3a8a 42%, #1d4ed8 100%) !important;
+  color: #ffffff !important;
+  border-color: rgba(147, 197, 253, 0.35) !important;
 }
 
 .portal-empty,

@@ -42,10 +42,15 @@ function writeStoredPreference(preference: ThemePreference) {
 }
 
 export const useThemeStore = defineStore('theme', {
-  state: () => ({
+  state: (): {
+    initialized: boolean;
+    preference: ThemePreference;
+    resolved: ResolvedTheme;
+    syncing: boolean;
+  } => ({
     initialized: false,
-    preference: 'auto' as ThemePreference,
-    resolved: 'light' as ResolvedTheme,
+    preference: 'auto',
+    resolved: 'light',
     syncing: false,
   }),
 

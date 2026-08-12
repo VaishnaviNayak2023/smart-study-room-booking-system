@@ -166,6 +166,16 @@ function ruleMatchesCondition(rule, { date, hours }) {
   }
 }
 
+function isPercentModifier(rule) {
+  const modifierText = String(rule?.modifier || '').toLowerCase();
+  const modifierType = String(rule?.modifierType || '').toLowerCase();
+  return (
+    modifierType.includes('percent') ||
+    modifierText.includes('%') ||
+    String(rule?.type || '').toLowerCase() === 'percentage'
+  );
+}
+
 function applyModifier(base, rule) {
   let value = Number(rule.value ?? rule.modifierValue);
   if (!Number.isFinite(value)) {
@@ -175,11 +185,7 @@ function applyModifier(base, rule) {
     value = Math.abs(value);
   }
 
-  const modifierText = String(rule.modifier || '').toLowerCase();
-  const isPercent =
-    rule.modifierType?.includes('percent') ||
-    modifierText.includes('%') ||
-    rule.type === 'percentage';
+  const isPercent = isPercentModifier(rule);
   const sign = isDiscountRule(rule) ? -1 : 1;
 
   if (isPercent) {

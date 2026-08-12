@@ -213,11 +213,18 @@ async function assertResourceBookable({ resourceId, resourceName, date, startTim
   const window = { date, startTime, endTime };
   const conflict = existing.find((b) => bookingConflictsWithWindow(b, window));
   if (conflict) {
+    const conflictStart = conflict.start_time || conflict.startTime || '';
+    const conflictEnd = conflict.end_time || conflict.endTime || '';
     return {
       ok: false,
       status: 409,
-      message: `This resource is already booked for the selected time (${conflict.booking_code}).`,
+      message: 'Booked for that interval, choose another interval',
       conflictCode: conflict.booking_code,
+      conflictInterval: {
+        date: conflict.date,
+        startTime: conflictStart,
+        endTime: conflictEnd,
+      },
     };
   }
 
@@ -227,7 +234,7 @@ async function assertResourceBookable({ resourceId, resourceName, date, startTim
       return {
         ok: false,
         status: 409,
-        message: 'This resource is unavailable for the selected time.',
+        message: 'Booked for that interval, choose another interval',
       };
     }
   }
@@ -566,7 +573,11 @@ router.post('/', authenticate, async (req, res) => {
     endTime,
   });
   if (!bookable.ok) {
-    return res.status(bookable.status).json({ message: bookable.message });
+    return res.status(bookable.status).json({
+      message: bookable.message,
+      conflictCode: bookable.conflictCode || null,
+      conflictInterval: bookable.conflictInterval || null,
+    });
   }
   const resolvedResourceId = resourceId || bookable.resourceRow?.id || null;
 
@@ -692,7 +703,11 @@ router.put('/:code', authenticate, async (req, res) => {
       excludeBookingId: booking.id,
     });
     if (!bookable.ok) {
-      return res.status(bookable.status).json({ message: bookable.message });
+      return res.status(bookable.status).json({
+        message: bookable.message,
+        conflictCode: bookable.conflictCode || null,
+        conflictInterval: bookable.conflictInterval || null,
+      });
     }
     const resourceRow = booking.resource_id
       ? await db.prepare('SELECT id, type FROM resources WHERE id = ?').get(booking.resource_id)

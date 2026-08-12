@@ -249,7 +249,13 @@ function applyRule(rule: PricingRuleForm) {
   form.name = rule.name;
   form.condition = rule.condition;
   form.modifier = rule.modifier;
-  form.modifierType = rule.modifierType || (rule.modifier.includes('Rs.') || rule.modifier.includes('$') ? 'fixed' : 'percent');
+  form.modifierType =
+    rule.modifierType ||
+    (String(rule.modifier).includes('%')
+      ? 'percent'
+      : /Rs\.|₹|\$|€|£/.test(String(rule.modifier))
+        ? 'fixed'
+        : 'percent');
   form.value = rule.value ?? Math.abs(Number(String(rule.modifier).match(/-?\d+(?:\.\d+)?/)?.[0] || 0));
   form.active = rule.active !== false;
   form.conditionType = rule.conditionType || 'custom';

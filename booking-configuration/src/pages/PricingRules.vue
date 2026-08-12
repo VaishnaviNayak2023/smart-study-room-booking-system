@@ -255,10 +255,10 @@
         </q-card>
 
         <!-- Pricing Simulation -->
-        <q-card flat class="simulation-panel q-mt-md">
-          <q-card-section>
+        <div class="simulation-panel q-mt-md">
+          <div class="simulation-inner">
             <div class="simulation-head">
-              <q-icon name="calculate" size="20px" />
+              <div class="simulation-icon"><q-icon name="calculate" size="20px" /></div>
               <div>
                 <div class="simulation-title">Pricing Simulation</div>
                 <div class="simulation-sub">
@@ -280,6 +280,7 @@
               emit-value
               map-options
               class="q-mt-md sim-input"
+              popup-content-class="sim-menu"
               @update:model-value="refreshSimulation"
             />
             <q-select
@@ -292,17 +293,45 @@
               emit-value
               map-options
               class="q-mt-sm sim-input"
+              popup-content-class="sim-menu"
               @update:model-value="refreshSimulation"
             />
             <div class="row q-col-gutter-sm q-mt-sm">
               <div class="col-12">
-                <q-input v-model="simulationDate" outlined dense dark type="date" label="Date" class="sim-input" @update:model-value="refreshSimulation" />
+                <q-input
+                  v-model="simulationDate"
+                  outlined
+                  dense
+                  dark
+                  type="date"
+                  label="Date"
+                  class="sim-input"
+                  @update:model-value="refreshSimulation"
+                />
               </div>
               <div class="col-6">
-                <q-input v-model="simulationStartTime" outlined dense dark type="time" label="Start" class="sim-input" @update:model-value="refreshSimulation" />
+                <q-input
+                  v-model="simulationStartTime"
+                  outlined
+                  dense
+                  dark
+                  type="time"
+                  label="Start"
+                  class="sim-input"
+                  @update:model-value="refreshSimulation"
+                />
               </div>
               <div class="col-6">
-                <q-input v-model="simulationEndTime" outlined dense dark type="time" label="End" class="sim-input" @update:model-value="refreshSimulation" />
+                <q-input
+                  v-model="simulationEndTime"
+                  outlined
+                  dense
+                  dark
+                  type="time"
+                  label="End"
+                  class="sim-input"
+                  @update:model-value="refreshSimulation"
+                />
               </div>
             </div>
 
@@ -319,7 +348,7 @@
                   {{ formatCurrency(item.amount) }}
                 </strong>
               </div>
-              <q-separator dark class="q-my-sm" />
+              <div class="sim-separator" />
               <div class="sim-line"><span>Subtotal</span><strong>{{ formatCurrency(simulationBreakdown.subtotal) }}</strong></div>
               <div class="sim-line"><span>Tax ({{ simulationBreakdown.taxRate }}%)</span><strong>{{ formatCurrency(simulationBreakdown.tax) }}</strong></div>
               <div class="sim-total">
@@ -329,21 +358,19 @@
             </div>
             <div v-else class="sim-error q-mt-md">Configure rates and create a resource to preview pricing.</div>
 
-            <div class="row q-gutter-sm q-mt-md">
-              <q-btn outline no-caps color="white" text-color="white" label="Recalculate" class="col sim-btn" @click="refreshSimulation" />
+            <div class="sim-actions q-mt-md">
+              <q-btn outline no-caps label="Recalculate" class="sim-btn sim-btn-outline" @click="refreshSimulation" />
               <q-btn
                 unelevated
                 no-caps
-                color="white"
-                text-color="primary"
                 label="View Receipt"
-                class="col sim-btn"
+                class="sim-btn sim-btn-solid"
                 :disable="!simulationBreakdown"
                 @click="simulationReceiptOpen = true"
               />
             </div>
-          </q-card-section>
-        </q-card>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -380,7 +407,7 @@ import api from '@/services/api';
 import PricingRuleFormDialog from '@/components/admin/PricingRuleFormDialog.vue';
 import PricingSimulationReceiptDialog from '@/components/admin/PricingSimulationReceiptDialog.vue';
 import { useSettingsStore } from '@/stores/settings-store';
-import { emitDashboardRefresh } from '@/stores/dashboard-events';
+import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 
 /* ==========================================================
    QUASAR
@@ -388,6 +415,7 @@ import { emitDashboardRefresh } from '@/stores/dashboard-events';
 
 const $q = useQuasar();
 const settingsStore = useSettingsStore();
+const dashboardEvents = useDashboardEvents();
 const ratePrefix = computed(() => settingsStore.ratePrefix);
 
 /* ==========================================================
@@ -674,25 +702,26 @@ async function refreshSimulation() {
   simulationError.value = '';
   simulationBreakdown.value = null;
   try {
-    let resourceId: number | null = simulationResourceId.value;
+    const isGeneral = selectedPricingContext.value === 'general';
+    let resourceId: number | null = isGeneral ? null : simulationResourceId.value;
     let resourceType = '';
-    if (selectedPricingContext.value !== 'general') {
+    if (!isGeneral) {
       const label = pricingContexts.value.find((item) => item.value === selectedPricingContext.value)?.label;
       resourceType = label || '';
     }
-    if (!resourceId && selectedPricingContext.value === 'general') {
-      const { data: resourcesData } = await api.get<{ resources: Array<{ id: number }> }>('/resources');
-      resourceId = resourcesData.resources?.[0]?.id ?? null;
-    }
-    if (!resourceId && !resourceType) {
+    // General preview must use General Base Rate only — never the first resource's booking-system rate.
+    if (!isGeneral && !resourceId && !resourceType) {
       simulationError.value = 'Create a resource for this booking system to preview pricing.';
       return;
     }
 
+    const generalPayload = buildGeneralPayload();
     const pricingOverride: Record<string, unknown> = {
-      general: buildGeneralPayload(),
+      general: isGeneral
+        ? { ...generalPayload, hourlyRate: Number(generalPayload.baseRate) || 0 }
+        : generalPayload,
     };
-    if (selectedPricingContext.value !== 'general') {
+    if (!isGeneral) {
       pricingOverride.context = buildContextPayload();
     }
 
@@ -882,7 +911,14 @@ const saveConfiguration = async () => {
 watch(
   () => settingsStore.currencyCode,
   () => {
-    void refreshSimulation();
+    void reloadPricingFromServer().then(() => refreshSimulation());
+  },
+);
+
+watch(
+  () => dashboardEvents.version,
+  () => {
+    void reloadPricingFromServer().then(() => refreshSimulation());
   },
 );
 
@@ -1238,9 +1274,17 @@ watch(selectedPricingContext, async (context) => {
 }
 
 .simulation-panel {
-  background: linear-gradient(160deg, #1e3a8a 0%, #2563eb 55%, #3b82f6 100%);
-  border-radius: 12px;
-  color: var(--portal-on-primary);
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(165deg, #172554 0%, #1e3a8a 42%, #1d4ed8 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(147, 197, 253, 0.35);
+  box-shadow: 0 10px 28px rgba(30, 58, 138, 0.28);
+}
+
+.simulation-inner {
+  padding: 18px;
+  color: #ffffff;
 }
 
 .simulation-head {
@@ -1249,42 +1293,88 @@ watch(selectedPricingContext, async (context) => {
   align-items: flex-start;
 }
 
+.simulation-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
 .simulation-title {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 750;
+  color: #ffffff !important;
 }
 
 .simulation-sub {
   font-size: 12px;
-  opacity: 0.85;
-  margin-top: 2px;
+  line-height: 1.4;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.82) !important;
 }
 
-.sim-input :deep(.q-field__label),
-.sim-input :deep(.q-field__native),
-.sim-input :deep(.q-field__append) {
-  color: var(--portal-on-primary);
+.sim-input {
+  color: #ffffff;
 }
 
 .sim-input :deep(.q-field__control) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+  border-radius: 10px;
+}
+
+.sim-input :deep(.q-field__native),
+.sim-input :deep(.q-field__input),
+.sim-input :deep(.q-field__append),
+.sim-input :deep(.q-field__marginal),
+.sim-input :deep(.q-select__dropdown-icon),
+.sim-input :deep(input),
+.sim-input :deep(.q-placeholder) {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.sim-input :deep(.q-field__label) {
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.sim-input :deep(.q-field--outlined .q-field__control:before),
+.sim-input :deep(.q-field--outlined .q-field__control:after) {
+  border-color: rgba(255, 255, 255, 0.42) !important;
+}
+
+.sim-input :deep(.q-field--focused .q-field__control:after) {
+  border-color: #bfdbfe !important;
 }
 
 .sim-loading {
   text-align: center;
   padding: 24px 0;
+  color: #ffffff;
 }
 
 .sim-error {
   font-size: 13px;
-  opacity: 0.9;
+  color: #fecaca !important;
 }
 
 .sim-breakdown {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.35) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
   padding: 14px;
+  color: #ffffff !important;
+}
+
+.sim-separator {
+  height: 1px;
+  margin: 10px 0;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .sim-line {
@@ -1292,32 +1382,65 @@ watch(selectedPricingContext, async (context) => {
   justify-content: space-between;
   gap: 12px;
   font-size: 13px;
-  padding: 4px 0;
+  padding: 5px 0;
+  color: rgba(255, 255, 255, 0.86) !important;
 }
 
 .sim-line strong {
   font-weight: 700;
+  color: #ffffff !important;
 }
 
-.line-surcharge { color: #fecaca; }
-.line-discount { color: #bbf7d0; }
+.line-surcharge { color: #fecaca !important; }
+.line-discount { color: #bbf7d0 !important; }
 
 .sim-total {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 4px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff !important;
+}
+
+.sim-total span {
+  font-weight: 650;
+  color: #ffffff !important;
 }
 
 .sim-total strong {
   font-size: 24px;
   font-weight: 800;
+  color: #ffffff !important;
+}
+
+.sim-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .sim-btn {
-  font-weight: 600;
+  font-weight: 650;
+  min-height: 40px;
+  border-radius: 10px;
+  width: 100%;
+}
+
+.sim-btn-outline {
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.75) !important;
+  background: transparent !important;
+}
+
+.sim-btn-solid {
+  color: #1e3a8a !important;
+  background: #ffffff !important;
+}
+
+.sim-btn-solid:disabled {
+  opacity: 0.55;
 }
 
 .bottom-bar {

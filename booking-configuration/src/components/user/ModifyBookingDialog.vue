@@ -62,14 +62,43 @@
             </div>
           </div>
 
-          <div class="info-hint">
+          <div class="new-window">
+            New interval: <strong>{{ form.startTime }} - {{ endTime }}</strong>
+          </div>
+
+          <div v-if="checkingAvailability" class="info-hint">
+            <q-spinner size="14px" color="primary" />
+            Checking availability…
+          </div>
+          <div v-else-if="conflictMessage" class="conflict-banner">
+            <q-icon name="event_busy" size="18px" />
+            <span>{{ conflictMessage }}</span>
+          </div>
+          <div v-else class="info-hint">
             <q-icon name="info" size="16px" />
             Changing the time may affect participant availability.
           </div>
 
+          <div v-if="busyIntervals.length" class="busy-box">
+            <div class="busy-title">Unavailable intervals</div>
+            <div v-for="(slot, index) in busyIntervals" :key="`${slot.startTime}-${index}`" class="busy-row">
+              {{ slot.startTime }} - {{ slot.endTime }}
+              <span v-if="slot.isMine" class="mine-tag">Current booking</span>
+            </div>
+          </div>
+
           <div class="row justify-end q-gutter-sm q-mt-md">
             <q-btn outline no-caps label="Cancel" class="action-btn" @click="emit('update:modelValue', false)" />
-            <q-btn unelevated no-caps color="primary" label="Save Changes" type="submit" class="action-btn" :loading="saving" />
+            <q-btn
+              unelevated
+              no-caps
+              color="primary"
+              label="Save Changes"
+              type="submit"
+              class="action-btn"
+              :loading="saving"
+              :disable="!!conflictMessage || checkingAvailability"
+            />
           </div>
         </q-form>
       </q-card-section>
@@ -82,10 +111,16 @@ import { computed, reactive, ref, watch } from 'vue';
 import { Notify } from 'quasar';
 import api from '@/services/api';
 import { emitDashboardRefresh } from '@/stores/dashboard-events';
+import {
+  BOOKED_INTERVAL_MESSAGE,
+  conflictMessageForSelection,
+  type BusyInterval,
+} from '@/utils/bookingInterval';
 
 export type ModifiableBooking = {
   id: string;
   resource: string;
+  resourceId?: number | null;
   datetime: string;
   date?: string;
   startTime?: string;
@@ -107,6 +142,10 @@ const emit = defineEmits<{
 
 const today = new Date().toISOString().slice(0, 10);
 const saving = ref(false);
+const checkingAvailability = ref(false);
+const conflictMessage = ref('');
+const busyIntervals = ref<BusyInterval[]>([]);
+let checkSeq = 0;
 
 const timeOptions = Array.from({ length: 24 * 2 }, (_, index) => {
   const totalMinutes = index * 30;
@@ -166,8 +205,79 @@ const endTime = computed(() => {
   return minutesToTime(h * 60 + m + form.duration * 60);
 });
 
+type ResourceAvailability = {
+  id: number;
+  name: string;
+  unavailableIntervals?: BusyInterval[];
+};
+
+async function checkAvailability() {
+  if (!props.modelValue || !props.booking || !form.date || !form.startTime) {
+    conflictMessage.value = '';
+    busyIntervals.value = [];
+    return;
+  }
+
+  const seq = ++checkSeq;
+  checkingAvailability.value = true;
+  try {
+    const { data } = await api.get<{ resources: ResourceAvailability[] }>('/resources', {
+      params: { date: form.date },
+    });
+    if (seq !== checkSeq) return;
+
+    const resources = Array.isArray(data.resources) ? data.resources : [];
+    const match =
+      (props.booking.resourceId != null
+        ? resources.find((r) => Number(r.id) === Number(props.booking?.resourceId))
+        : undefined) || resources.find((r) => r.name === props.booking?.resource);
+
+    const intervals = Array.isArray(match?.unavailableIntervals) ? match.unavailableIntervals : [];
+    busyIntervals.value = intervals;
+
+    conflictMessage.value = conflictMessageForSelection(
+      form.date,
+      form.startTime,
+      endTime.value,
+      intervals,
+      props.booking.id,
+    );
+  } catch {
+    if (seq !== checkSeq) return;
+    // Keep save enabled; server will still enforce conflicts.
+    conflictMessage.value = '';
+    busyIntervals.value = [];
+  } finally {
+    if (seq === checkSeq) checkingAvailability.value = false;
+  }
+}
+
+watch(
+  () => [props.modelValue, props.booking?.id, form.date, form.startTime, form.duration] as const,
+  ([open]) => {
+    if (!open) {
+      conflictMessage.value = '';
+      busyIntervals.value = [];
+      return;
+    }
+    void checkAvailability();
+  },
+);
+
 async function save() {
   if (!props.booking) return;
+  if (conflictMessage.value) {
+    Notify.create({ type: 'warning', message: conflictMessage.value });
+    return;
+  }
+
+  // Re-check immediately before save so the message stays dynamic.
+  await checkAvailability();
+  if (conflictMessage.value) {
+    Notify.create({ type: 'warning', message: conflictMessage.value });
+    return;
+  }
+
   saving.value = true;
   try {
     await api.put(`/bookings/${props.booking.id}`, {
@@ -188,7 +298,11 @@ async function save() {
       typeof error === 'object' && error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-    Notify.create({ type: 'negative', message: message || 'Failed to update booking.' });
+    Notify.create({
+      type: 'negative',
+      message: message || BOOKED_INTERVAL_MESSAGE,
+    });
+    void checkAvailability();
   } finally {
     saving.value = false;
   }
@@ -234,12 +348,56 @@ async function save() {
   color: var(--portal-text);
 }
 
+.new-window {
+  font-size: 13px;
+  color: var(--portal-text-secondary, #4b5563);
+}
+
 .info-hint {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--portal-muted);
   font-size: 12px;
+}
+
+.conflict-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.busy-box {
+  border: 1px solid var(--portal-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--portal-card);
+}
+
+.busy-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--portal-text);
+}
+
+.busy-row {
+  font-size: 12px;
+  color: var(--portal-muted);
+  padding: 2px 0;
+}
+
+.mine-tag {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--portal-primary);
+  font-weight: 600;
 }
 
 .action-btn {

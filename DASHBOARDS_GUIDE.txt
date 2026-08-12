@@ -1,0 +1,616 @@
+BOOKING CONFIGURATION — DASHBOARDS & SECTIONS GUIDE
+=====================================================
+Written: 2026-08-12
+Companion file: RUNNING_STEPS.txt
+
+This document explains every portal screen (dashboard and related sections),
+what each section does, and how users/admins move through the app.
+
+
+============================================================
+1) HIGH-LEVEL APP MAP
+============================================================
+
+There are two portals after login:
+
+  USER PORTAL                         ADMIN PORTAL
+  ------------                        -------------
+  /dashboard                          /admin-dashboard
+  /browse-rooms                       /resource-types
+  /my-bookings                        /manage-resources
+  /profile                            /bookings
+  /notifications                      /pricing-rules
+  /user-settings                      /reports
+                                      /notifications
+                                      /settings
+                                      /profile
+
+Public pages (no login required):
+  /login
+  /register
+
+
+------------------------------------------------------------
+ASCII SITE MAP
+------------------------------------------------------------
+
+                        +-----------+
+                        |  /login   |
+                        +-----+-----+
+                              |
+              +---------------+---------------+
+              |                               |
+              v                               v
+     role = user                      role = admin
+              |                               |
+              v                               v
+     +----------------+               +--------------------+
+     | User Dashboard |               | Admin Dashboard    |
+     | /dashboard     |               | /admin-dashboard   |
+     +--------+-------+               +----------+---------+
+              |                                  |
+   +----------+----------+            +----------+-----------+
+   |          |          |            |     |      |         |
+   v          v          v            v     v      v         v
+ Browse    My Bookings  Profile   Resource  Resources Bookings Pricing
+ Rooms                              Types              /Reports/Settings
+
+
+============================================================
+2) AUTH FLOW
+============================================================
+
+  [Open app] --> /login
+       |
+       +--> Create account --> /register
+       |         |
+       |         +--> choose role User or Admin
+       |         +--> submit --> login page / auto session
+       |
+       +--> Sign in with email + password
+                 |
+                 +--> JWT session validated by router guard
+                 |
+                 +--> if admin --> /admin-dashboard
+                 +--> if user  --> /dashboard
+                 |
+                 +--> protected routes require auth
+                 +--> admin-only routes require role=admin
+
+
+============================================================
+3) USER PORTAL — DASHBOARD & SECTIONS
+============================================================
+
+------------------------------------------------------------
+3.1 USER DASHBOARD  (/dashboard)
+------------------------------------------------------------
+Purpose:
+  Personal home screen. Shows how much the user has booked, what is next,
+  and shortcuts to common actions.
+
+Sections:
+  A) Welcome header
+     - Greets the signed-in user by name
+     - Short subtitle: workspace overview for today
+
+  B) Stats cards
+     - Total Bookings   = all of this user's bookings
+     - Upcoming         = future/active bookings (+ "next in" hint)
+     - Completed        = finished bookings
+     - Hours Booked     = total reserved hours (+ money spent if available)
+
+  C) Next Upcoming Booking
+     - Card for the soonest booking (image/name/location/capacity/date/time)
+     - Status badge (pending / confirmed / etc.)
+     - Actions:
+         Modify  -> opens Modify Booking dialog
+         Cancel  -> confirmation dialog, then cancels booking
+     - Empty state: "No upcoming bookings" + button to Browse Rooms
+
+  D) Quick Actions
+     - Book a Workspace  -> /browse-rooms
+     - My Bookings       -> /my-bookings
+     - Profile           -> /profile
+
+Flowchart:
+
+  User Dashboard
+       |
+       +--> View stats
+       +--> See next booking ----+--> Modify
+       |                         +--> Cancel
+       +--> Quick Action --------+--> Browse Rooms
+                                 +--> My Bookings
+                                 +--> Profile
+
+
+------------------------------------------------------------
+3.2 BROWSE ROOMS  (/browse-rooms)
+------------------------------------------------------------
+Purpose:
+  Find available workspaces and create a new booking.
+
+Sections:
+  A) Header
+     - Title + short help text
+
+  B) Filter bar
+     - Room Type
+     - Date
+     - Capacity
+     - Apply Filters
+
+  C) Spaces grid (resource cards)
+     Each card shows:
+       - Image / placeholder
+       - Availability status pill
+       - Name + capacity
+       - Description / location
+       - Tags
+       - Busy/unavailable intervals (marks "Your booking" when applicable)
+       - Hourly price
+       - Book button (disabled if not bookable)
+
+  D) Booking dialog (when Book is clicked)
+     - Booking Details
+     - Date & Time
+     - Additional Notes
+     - Price preview / confirm
+
+Booking flow:
+
+  Browse Rooms
+       |
+       v
+  Apply filters (type/date/capacity)
+       |
+       v
+  Choose a room card --> Book
+       |
+       v
+  Fill details + date/time + notes
+       |
+       v
+  Submit booking
+       |
+       +--> if auto-confirm ON  --> status Confirmed
+       +--> if auto-confirm OFF --> status Pending (awaits admin)
+       |
+       v
+  Appears in My Bookings / User Dashboard
+  (and in Admin Bookings queue if pending)
+
+
+------------------------------------------------------------
+3.3 MY BOOKINGS  (/my-bookings)
+------------------------------------------------------------
+Purpose:
+  Manage the signed-in user's own reservations.
+
+Sections:
+  A) Header
+     - Upcoming count badge
+     - Filter / Sort controls
+
+  B) Optional filter panel
+     - Search text
+     - Status filter
+
+  C) Tabs
+     - Upcoming Bookings
+     - Past Bookings
+
+  D) Booking list cards
+     - Resource name, status chip, location
+     - Date and time range
+     - Actions:
+         Upcoming: View Details / Modify / Cancel (menu)
+         Past:     View Receipt
+
+Flow:
+
+  My Bookings --> Upcoming tab --> View / Modify / Cancel
+              --> Past tab     --> View Receipt
+
+
+------------------------------------------------------------
+3.4 PROFILE  (/profile)  [shared with admin]
+------------------------------------------------------------
+Purpose:
+  Account identity and editable personal details.
+
+Sections:
+  A) Profile card (left)
+     - Avatar (upload / remove)
+     - Display name + email
+     - Role badge
+     - Account active / role meta
+
+  B) Edit form (right)
+     - Name and other account fields
+     - Save changes
+
+
+------------------------------------------------------------
+3.5 NOTIFICATIONS  (/notifications)  [shared with admin]
+------------------------------------------------------------
+Purpose:
+  In-app alerts about booking and system events.
+
+Sections:
+  A) Header + "Mark all as read"
+  B) Notification list
+     - Unread styling
+     - Type icon, title, message, relative time
+     - Click marks one notification as read
+
+
+------------------------------------------------------------
+3.6 USER SETTINGS  (/user-settings)
+------------------------------------------------------------
+Purpose:
+  Personal preferences (not system-wide admin settings).
+
+Sections:
+  A) Appearance / Theme selector
+  B) Language
+  C) Privacy
+     - Profile Visibility
+     - Activity Status
+  D) Notification Preferences table
+     - Booking Confirmations / Reminders / System Updates
+     - Channels: Email, Push, In-App
+  E) Discard / Save Preferences
+
+
+============================================================
+4) ADMIN PORTAL — DASHBOARD & SECTIONS
+============================================================
+
+------------------------------------------------------------
+4.1 ADMIN DASHBOARD  (/admin-dashboard)
+------------------------------------------------------------
+Purpose:
+  System overview for operators: capacity, demand, approvals, health.
+
+Sections:
+  A) Pricing configuration warnings (banner when needed)
+     - Warns if base rates / resource-type pricing look incomplete
+     - Shortcut: Open Pricing
+
+  B) System Overview header
+
+  C) Stats cards
+     - Total Resources (+ available count)
+     - Total Bookings (+ today's count)
+     - Pending Approvals
+     - System Health (shows active users)
+
+  D) Recent Activity
+     - Latest bookings (resource, user, date/time, status)
+     - View All -> /bookings
+
+  E) Routing Queue
+     - Pending Approvals count
+     - Confirmed Bookings count
+     - Registered Users count
+
+Flow:
+
+  Admin Dashboard
+       |
+       +--> Fix pricing warnings --> Pricing Rules
+       +--> Review recent activity --> Bookings
+       +--> See pending queue     --> Bookings (Requires Action)
+
+
+------------------------------------------------------------
+4.2 RESOURCE TYPES  (/resource-types)
+------------------------------------------------------------
+Purpose:
+  Define categories / organizational buckets for bookable assets
+  (e.g. Meeting Room, Desk, Lab).
+
+Sections:
+  A) Header + search
+  B) Category cards
+     - Icon/color, name, description
+     - Active resource count
+     - Edit
+  C) Add New Category card
+     - Opens Resource Type form dialog
+
+
+------------------------------------------------------------
+4.3 RESOURCES  (/manage-resources)
+------------------------------------------------------------
+Purpose:
+  CRUD for concrete bookable assets (rooms, desks, equipment).
+
+Sections:
+  A) Header + New Resource button
+  B) Filters (search / type / status)
+  C) Resources table
+     - Name + ID, type, capacity/location fields, status chip
+     - Edit / Delete actions
+  D) Pagination
+  E) Resource Form dialog / Delete confirm dialog
+
+Relationship:
+
+  Resource Types (categories)
+           |
+           v
+  Resources (actual rooms/assets)
+           |
+           v
+  Bookings (reservations against a resource)
+
+
+------------------------------------------------------------
+4.4 BOOKINGS  (/bookings)
+------------------------------------------------------------
+Purpose:
+  Organization-wide booking management and approval workflow.
+
+Sections:
+  A) Header
+     - Switches title between "Bookings Management" and "Requires Action"
+
+  B) View tabs
+     - All Requests
+     - Requires Action (shows pending badge)
+
+  C) Summary stats
+     All Requests:
+       - Pending Approval
+       - Confirmed Today
+     Requires Action:
+       - Total Pending
+       - Avg Response Time
+
+  D) Toolbar
+     - Search
+     - Status / Resource / Date filters (All Requests)
+     - Refresh / export-related actions as available
+
+  E) Bookings table
+     - User, resource, schedule, status
+     - Approve / Reject / Cancel / details actions (depending on status)
+
+Approval flowchart:
+
+  User submits booking
+           |
+           v
+  Auto-confirm enabled?
+      /               \
+    Yes                No
+     |                  |
+     v                  v
+  Confirmed         Pending
+                        |
+                        v
+               Admin Bookings > Requires Action
+                        |
+            +-----------+-----------+
+            |                       |
+            v                       v
+         Approve                 Reject/Cancel
+            |                       |
+            v                       v
+        Confirmed               Cancelled
+
+
+------------------------------------------------------------
+4.5 PRICING RULES  (/pricing-rules)
+------------------------------------------------------------
+Purpose:
+  Configure how booking prices are calculated per booking system /
+  resource-type context.
+
+Sections:
+  A) Header
+     - Booking System context selector (general + type contexts)
+     - Discard Changes / Save Configuration
+
+  B) Pricing Rules / Global Discount Rules panel
+     - Rule name, condition, modifier, active toggle
+     - Add / Edit / Delete rules
+
+  C) Base Rate / Base Pricing panel
+     - Default or standard hourly rate
+     - Minimum duration / free first hour (context-dependent)
+     - Peak hour surcharges
+
+  D) Additional configuration panels (taxes, modifiers, simulation —
+     depending on selected context)
+
+Pricing flow:
+
+  System Settings (currency)
+           |
+           v
+  Pricing Rules (base rate + modifiers + peak)
+           |
+           v
+  Browse Rooms shows /hr price
+           |
+           v
+  Booking dialog calculates amount
+           |
+           v
+  Receipt / reports reflect charged totals
+
+
+------------------------------------------------------------
+4.6 REPORTS  (/reports)
+------------------------------------------------------------
+Purpose:
+  Analytics for platform performance and utilization.
+
+Sections:
+  A) Header
+     - Range label (e.g. Last 30 Days)
+     - Export Report
+
+  B) KPI stats cards (with trend vs previous period)
+
+  C) Bookings by Status
+     - Status / Volume toggle
+     - Breakdown bars + counts
+
+  D) Top Resources Utilization
+     - Ranked resources with booking count + utilization %
+
+
+------------------------------------------------------------
+4.7 SYSTEM SETTINGS  (/settings)  [admin]
+------------------------------------------------------------
+Purpose:
+  Enterprise routing rules and global defaults.
+
+Sections:
+  A) Appearance / Theme selector
+  B) Booking & Routing Logic
+     - Auto-Confirm Bookings
+     - Allow Same-Day Bookings
+     - Send Email Notifications
+     - Max Booking Hours
+     - Advance Booking (days)
+  C) Global Preferences
+     - System Name
+     - System Currency
+     - System Language
+  D) Discard / Save Configuration
+
+
+============================================================
+5) END-TO-END USER JOURNEY (HAPPY PATH)
+============================================================
+
+  Register/Login as USER
+           |
+           v
+  User Dashboard (see empty/upcoming stats)
+           |
+           v
+  Browse Rooms --> filter --> Book workspace
+           |
+           v
+  Booking created (Pending or Confirmed)
+           |
+           v
+  My Bookings / Dashboard updates
+           |
+           +--> Modify or Cancel if needed
+           +--> Receive Notifications
+           +--> View Receipt for past bookings
+
+
+============================================================
+6) END-TO-END ADMIN JOURNEY
+============================================================
+
+  Login as ADMIN
+           |
+           v
+  Admin Dashboard (see pending + activity)
+           |
+           +--> Resource Types  (define categories)
+           +--> Resources       (add rooms/assets)
+           +--> Pricing Rules   (set rates)
+           +--> Settings        (auto-confirm, limits, currency)
+           |
+           v
+  Bookings > Requires Action
+           |
+           +--> Approve / Reject pending requests
+           |
+           v
+  Reports (utilization + status analytics)
+           |
+           v
+  Notifications / Profile as needed
+
+
+============================================================
+7) DATA / STATUS LIFECYCLE
+============================================================
+
+  Resource Type created
+        |
+        v
+  Resource created (Available / Unavailable)
+        |
+        v
+  User books resource -----> Booking status:
+                               Pending
+                                  |
+                     +------------+------------+
+                     |                         |
+                     v                         v
+                 Confirmed                 Cancelled
+                     |
+                     v
+                 Completed (after end time / past)
+
+
+============================================================
+8) ROLE GUARD SUMMARY
+============================================================
+
+  Route                 Who can open
+  --------------------  -------------------
+  /login, /register     Anyone (public)
+  /dashboard            Logged-in user
+  /browse-rooms         Logged-in user
+  /my-bookings          Logged-in user
+  /user-settings        Logged-in user
+  /profile              Logged-in user/admin
+  /notifications        Logged-in user/admin
+  /admin-dashboard      Admin only
+  /resource-types       Admin only
+  /manage-resources     Admin only
+  /bookings             Admin only
+  /pricing-rules        Admin only
+  /reports              Admin only
+  /settings             Admin only
+
+If a user hits an admin route, the router redirects them to their own dashboard.
+
+
+============================================================
+9) SIDEBAR NAVIGATION (AS IMPLEMENTED)
+============================================================
+
+USER SIDEBAR:
+  Dashboard | Browse Rooms | My Bookings | Profile | Notifications | Settings | Logout
+
+ADMIN SIDEBAR:
+  Dashboard | Resource Types | Resources | Bookings | Pricing Rules |
+  Reports | Notifications | Settings | Profile | Logout
+
+
+============================================================
+10) QUICK REFERENCE — “WHICH SCREEN DO I USE?”
+============================================================
+
+  I want to...                         Go to...
+  -----------------------------------  -------------------------
+  See my overview                      User Dashboard
+  Reserve a room                       Browse Rooms
+  Change/cancel my booking             My Bookings or Dashboard
+  Change my theme/language             User Settings
+  Update my photo/name                 Profile
+  Read alerts                          Notifications
+  See org-wide metrics                 Admin Dashboard
+  Create room categories               Resource Types
+  Add a physical room                  Resources
+  Approve pending requests             Bookings > Requires Action
+  Change hourly rates                  Pricing Rules
+  Export usage analytics               Reports
+  Turn on auto-confirm                 System Settings
+
+End of DASHBOARDS_GUIDE.txt

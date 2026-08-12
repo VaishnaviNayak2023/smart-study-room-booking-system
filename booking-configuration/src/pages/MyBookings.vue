@@ -210,6 +210,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 type Booking = {
   id: string;
   resource: string;
+  resourceId?: number | null;
   datetime: string;
   status: string;
   amount: string;

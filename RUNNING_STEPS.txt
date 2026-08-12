@@ -1,0 +1,258 @@
+BOOKING CONFIGURATION — STEPS TO RUN THE CODE
+================================================
+Written while starting the application on: 2026-08-12
+Project root: c:\Users\prash\OneDrive\Desktop\Booking Configuration
+
+This file records what was done to run the app, plus how you can run it again.
+
+
+------------------------------------------------------------
+A) WHAT THIS PROJECT IS
+------------------------------------------------------------
+Three parts must work together:
+
+  Browser  -->  Frontend (Quasar/Vue on port 9000)
+           -->  Backend API (Express on port 5006)
+           -->  MySQL (port 3306)
+
+Folders:
+  backend/                 = Node.js REST API
+  booking-configuration/   = Vue/Quasar frontend
+  docker-compose.yml       = starts MySQL + backend + frontend together
+  .env                     = local secrets and ports (copy from .env.example)
+
+
+------------------------------------------------------------
+B) PREREQUISITES CHECKED
+------------------------------------------------------------
+Step 1. Confirm tools are installed:
+
+  node --version
+  npm --version
+  docker --version
+  docker compose version
+
+Observed on this machine:
+  - Docker is available (Docker 29.x / Compose v5.x)
+  - A root .env file already exists
+  - MySQL container (booking-mysql) was already healthy before rebuild
+
+
+------------------------------------------------------------
+C) STEPS ACTUALLY FOLLOWED TO RUN (DOCKER — RECOMMENDED)
+------------------------------------------------------------
+Step 2. Open a terminal in the project root:
+
+  cd "c:\Users\prash\OneDrive\Desktop\Booking Configuration"
+
+Step 3. Confirm environment file exists:
+
+  - If missing:  copy .env.example .env
+  - Then edit .env as needed (DB password, JWT secret, seed users, ports)
+
+Step 4. Check what is already running:
+
+  docker compose ps
+
+  Result at start of this session:
+  - mysql service was UP and healthy on port 3306
+  - backend / frontend were not fully up yet (rebuild started)
+
+Step 5. Build and start the full stack in the background:
+
+  docker compose up --build -d
+
+  What this does:
+  1) Builds backend image from backend/Dockerfile
+  2) Builds frontend image from booking-configuration/Dockerfile
+  3) Starts mysql (if needed)
+  4) Waits for MySQL health check
+  5) Starts backend (migrates/bootstraps DB, serves API on 5006)
+  6) Starts frontend (serves UI on 9000)
+
+Step 6. Watch progress / logs if needed:
+
+  docker compose logs -f
+  docker compose logs -f backend
+  docker compose logs -f frontend
+  docker compose logs -f mysql
+
+Step 7. Verify services:
+
+  docker compose ps
+  curl http://localhost:5006/health
+
+  Expected health response shape:
+  { "status": "ok", "database": "connected" }
+
+Step 8. Open the app in a browser:
+
+  Frontend:  http://localhost:9000
+  Backend:   http://localhost:5006
+
+Step 9. Sign in with seed credentials from .env (defaults from .env.example):
+
+  Admin:
+    email:    admin@local.test
+    password: ChangeMe123!
+
+  User:
+    email:    user@local.test
+    password: ChangeMe123!
+
+  After login:
+  - admin role  -> /admin-dashboard
+  - user role   -> /dashboard
+
+
+------------------------------------------------------------
+D) OPTIONAL: SEED / MIGRATE DATABASE
+------------------------------------------------------------
+If dashboards look empty or login users are missing:
+
+  docker compose run --rm backend npm run db:migrate
+  docker compose run --rm backend npm run db:seed
+
+
+------------------------------------------------------------
+E) ALTERNATIVE: RUN LOCALLY WITHOUT FULL DOCKER STACK
+------------------------------------------------------------
+Use this if you prefer Node processes on the host, with MySQL still available
+(either Docker MySQL only, or a local MySQL install).
+
+1) Start MySQL (example — Docker MySQL only):
+
+  docker compose up -d mysql
+
+2) In .env for local backend, use:
+
+  DB_HOST=localhost
+  (or 127.0.0.1)
+  PORT=5006
+  VITE_API_URL=http://localhost:5006
+
+3) Backend terminal:
+
+  cd backend
+  npm install
+  npm run db:migrate
+  npm run db:seed
+  npm run dev
+
+4) Frontend terminal:
+
+  cd booking-configuration
+  npm install
+  npm run dev
+
+5) Open http://localhost:9000
+
+
+------------------------------------------------------------
+F) STOP / RESTART COMMANDS
+------------------------------------------------------------
+Stop everything:
+  docker compose down
+
+Restart:
+  docker compose restart
+
+Rebuild after big dependency changes:
+  docker compose up --build -d
+
+Reset database volume (DESTROYS DATA):
+  docker compose down -v
+
+
+------------------------------------------------------------
+G) QUICK FLOWCHART — STARTUP SEQUENCE
+------------------------------------------------------------
+
+  [1] Create/verify .env
+           |
+           v
+  [2] docker compose up --build -d
+           |
+           +--> MySQL starts
+           |         |
+           |         v
+           |   MySQL health check passes
+           |         |
+           |         v
+           +--> Backend starts
+           |         |
+           |         +--> migrate/bootstrap schema
+           |         +--> listen on :5006
+           |         |
+           |         v
+           +--> Frontend starts (:9000)
+                     |
+                     v
+           [3] Browser opens http://localhost:9000
+                     |
+                     v
+           [4] Login (admin or user)
+                     |
+                     +--> Admin Dashboard (/admin-dashboard)
+                     +--> User Dashboard  (/dashboard)
+
+
+------------------------------------------------------------
+H) QUICK FLOWCHART — REQUEST PATH WHILE RUNNING
+------------------------------------------------------------
+
+  User clicks UI action
+           |
+           v
+  Vue/Quasar page (booking-configuration)
+           |
+           v
+  Axios API call  (VITE_API_URL -> http://localhost:5006)
+           |
+           v
+  Express route (backend/routes/...)
+           |
+           v
+  MySQL query / update
+           |
+           v
+  JSON response back to UI
+           |
+           v
+  Dashboard / table / dialog updates
+
+
+------------------------------------------------------------
+I) USEFUL URLS WHILE THE APP IS RUNNING
+------------------------------------------------------------
+  http://localhost:9000/login
+  http://localhost:9000/register
+  http://localhost:9000/dashboard            (user)
+  http://localhost:9000/admin-dashboard      (admin)
+  http://localhost:5006/health               (API health)
+
+
+------------------------------------------------------------
+J) SESSION NOTES (WHAT HAPPENED WHILE WRITING THIS FILE)
+------------------------------------------------------------
+- Checked prerequisites: Docker + Compose available; .env present.
+- Ran: docker compose ps  (MySQL already healthy on port 3306).
+- Tried: docker compose up --build -d
+  Result: FAILED while building backend image
+  Error:  npm install --omit=dev inside Docker ("Exit handler never called!")
+  Frontend image build was canceled because backend failed.
+- Confirmed the app is still reachable from an existing local run:
+  - Backend process listening on http://localhost:5006  (health = ok)
+  - Frontend process listening on http://localhost:9000  (HTTP 200)
+  - MySQL still from Docker: booking-mysql (healthy)
+- So the working runtime for this session is:
+  Docker MySQL + local Node backend + local Node frontend
+  (see section E above if you need to restart that mode)
+- Dashboard explanations / flowcharts are in: DASHBOARDS_GUIDE.txt
+
+Current URLs:
+  Frontend UI: http://localhost:9000
+  Backend API: http://localhost:5006
+  Health check: http://localhost:5006/health
+
+End of RUNNING_STEPS.txt

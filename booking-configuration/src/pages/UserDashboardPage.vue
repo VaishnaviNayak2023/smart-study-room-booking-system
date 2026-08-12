@@ -44,7 +44,7 @@
 
           <q-card v-if="upcoming" flat bordered class="upcoming-card">
             <div class="upcoming-media">
-              <q-img v-if="upcoming.image" :src="upcoming.image" :alt="upcoming.resource" fit="cover" />
+              <q-img v-if="upcoming.image" :src="resolveAssetUrl(upcoming.image)" :alt="upcoming.resource" fit="cover" />
               <div v-else class="upcoming-placeholder">
                 <q-icon name="meeting_room" size="42px" />
               </div>
@@ -141,10 +141,12 @@ import { useStudyroomStore } from '@/stores/studyroom-store';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 import { useNotificationsStore } from '@/stores/notifications-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { resolveAssetUrl } from '@/utils/assetUrl';
 
 type UpcomingBooking = {
   id: string;
   resource: string;
+  resourceId?: number | null;
   datetime: string;
   status: string;
   amount?: string;

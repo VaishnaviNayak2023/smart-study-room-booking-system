@@ -30,8 +30,16 @@ export function timeToMinutes(value) {
 
 export function normalizeDate(value) {
   if (!value) return '';
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) return localDateString(value);
   return String(value).slice(0, 10);
+}
+
+/** Local calendar date YYYY-MM-DD (avoids UTC off-by-one near midnight). */
+export function localDateString(now = new Date()) {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function hoursBetween(startTime, endTime) {
@@ -67,7 +75,7 @@ export function bookingStillActive(booking, now = new Date()) {
   const date = normalizeDate(booking.date);
   if (!date) return false;
 
-  const today = now.toISOString().slice(0, 10);
+  const today = localDateString(now);
   if (date > today) return true;
   if (date < today) return false;
 
@@ -77,10 +85,24 @@ export function bookingStillActive(booking, now = new Date()) {
   return endMin > nowMin;
 }
 
+/** True when "now" falls inside the booking's [start, end) on its date. */
+export function bookingOccupiesNow(booking, now = new Date()) {
+  if (!isOccupyingStatus(booking.status)) return false;
+  const date = normalizeDate(booking.date);
+  if (date !== localDateString(now)) return false;
+
+  const startMin = timeToMinutes(booking.start_time || booking.startTime);
+  const endMin = timeToMinutes(booking.end_time || booking.endTime);
+  if (startMin == null || endMin == null) return bookingStillActive(booking, now);
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return startMin <= nowMin && nowMin < endMin;
+}
+
 /**
  * Does this booking conflict with a requested date/time window?
- * - date only: any occupying booking on that date
  * - date + times: occupying booking on that date with overlapping times
+ * - date only: used for listing intervals (any occupying booking on that date)
  * - no date: any still-active occupying booking
  */
 export function bookingConflictsWithWindow(booking, { date, startTime, endTime } = {}, now = new Date()) {
@@ -103,10 +125,35 @@ export function bookingConflictsWithWindow(booking, { date, startTime, endTime }
   );
 }
 
+function toInterval(b, viewerUserId) {
+  return {
+    date: normalizeDate(b.date),
+    startTime: b.start_time || b.startTime || '',
+    endTime: b.end_time || b.endTime || '',
+    bookingId: b.booking_code || (b.id != null ? String(b.id) : null),
+    userId: b.user_id ?? b.userId ?? null,
+    isMine: viewerUserId != null && Number(b.user_id ?? b.userId) === Number(viewerUserId),
+  };
+}
+
+function sortIntervals(intervals) {
+  return intervals.sort((a, b) => {
+    const dateCmp = String(a.date).localeCompare(String(b.date));
+    if (dateCmp !== 0) return dateCmp;
+    return String(a.startTime).localeCompare(String(b.startTime));
+  });
+}
+
 /**
  * Compute effective availability for a resource row + its bookings.
  * `inService` is the admin maintenance flag (DB `available` column).
  * `viewerUserId` personalizes Booked vs Unavailable.
+ *
+ * Window rules:
+ * - date + startTime + endTime → slot conflict check (booking create/edit)
+ * - date only → show that day's remaining intervals; status reflects "occupied now"
+ *   when the date is today (past slots no longer block; free gaps stay bookable)
+ * - no date → any still-active upcoming/ongoing booking
  */
 export function computeResourceAvailability(
   resource,
@@ -116,26 +163,42 @@ export function computeResourceAvailability(
   viewerUserId = null,
 ) {
   const inService = !!resource.available;
-  const conflicting = bookings.filter((b) => bookingConflictsWithWindow(b, window, now));
+  const windowDate = normalizeDate(window.date);
+  const hasExplicitTimes = !!(window.startTime && window.endTime);
+  const today = localDateString(now);
 
-  const intervals = conflicting
-    .map((b) => ({
-      date: normalizeDate(b.date),
-      startTime: b.start_time || b.startTime || '',
-      endTime: b.end_time || b.endTime || '',
-      bookingId: b.booking_code || (b.id != null ? String(b.id) : null),
-      userId: b.user_id ?? b.userId ?? null,
-      isMine: viewerUserId != null && Number(b.user_id ?? b.userId) === Number(viewerUserId),
-    }))
-    .sort((a, b) => {
-      const dateCmp = String(a.date).localeCompare(String(b.date));
-      if (dateCmp !== 0) return dateCmp;
-      return String(a.startTime).localeCompare(String(b.startTime));
+  let displayBookings;
+  let blockingBookings;
+
+  if (hasExplicitTimes && windowDate) {
+    blockingBookings = bookings.filter((b) => bookingConflictsWithWindow(b, window, now));
+    displayBookings = blockingBookings;
+  } else if (windowDate) {
+    // Calendar day listing: keep only intervals that have not ended yet.
+    displayBookings = bookings.filter((b) => {
+      if (!isOccupyingStatus(b.status)) return false;
+      if (normalizeDate(b.date) !== windowDate) return false;
+      if (windowDate < today) return false;
+      if (windowDate > today) return true;
+      const endMin = timeToMinutes(b.end_time || b.endTime);
+      if (endMin == null) return true;
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      return endMin > nowMin;
     });
+    // Status / canBook for date-only: currently inside a slot (today), else free to book gaps.
+    blockingBookings =
+      windowDate === today ? displayBookings.filter((b) => bookingOccupiesNow(b, now)) : [];
+  } else {
+    displayBookings = bookings.filter((b) => bookingStillActive(b, now));
+    blockingBookings = displayBookings;
+  }
 
-  const bookedByCurrentUser = intervals.some((i) => i.isMine);
-  const bookedByOthers = intervals.some((i) => !i.isMine);
-  const isBooked = intervals.length > 0;
+  const intervals = sortIntervals(displayBookings.map((b) => toInterval(b, viewerUserId)));
+  const blockingIntervals = sortIntervals(blockingBookings.map((b) => toInterval(b, viewerUserId)));
+
+  const bookedByCurrentUser = blockingIntervals.some((i) => i.isMine);
+  const bookedByOthers = blockingIntervals.some((i) => !i.isMine);
+  const isBooked = blockingIntervals.length > 0;
 
   let availabilityStatus = 'available';
   if (!inService) availabilityStatus = 'maintenance';
@@ -143,19 +206,22 @@ export function computeResourceAvailability(
   else if (bookedByOthers) availabilityStatus = 'unavailable';
 
   const next = intervals[0] || null;
+  // Date-only browse: allow booking as long as the resource is in service.
+  // Slot conflicts are enforced when start/end times are provided (and on POST).
+  const canBook = hasExplicitTimes
+    ? inService && !isBooked
+    : inService && (windowDate ? true : !isBooked);
 
   return {
     inService,
     isBooked,
     bookedByCurrentUser,
     bookedByOthers,
-    // Fully free for a new booking in this window.
     available: inService && !isBooked,
-    // Owner already booked it; others cannot use Book Now while slots are taken.
-    canBook: inService && !isBooked,
+    canBook,
     availabilityStatus,
     unavailableIntervals: intervals,
     activeBookingId: next ? next.bookingId : null,
-    activeBookingStatus: conflicting[0] ? conflicting[0].status : null,
+    activeBookingStatus: (blockingBookings[0] || displayBookings[0])?.status || null,
   };
 }

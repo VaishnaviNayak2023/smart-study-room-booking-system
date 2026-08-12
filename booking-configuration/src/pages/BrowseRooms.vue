@@ -41,12 +41,12 @@
     <div v-else-if="error" class="portal-error">
       <q-icon name="error_outline" size="32px" color="negative" />
       <div>{{ error }}</div>
-      <q-btn unelevated no-caps color="primary" label="Retry" @click="loadData" />
+      <q-btn unelevated no-caps color="primary" label="Retry" @click="() => loadData()" />
     </div>
     <div v-else-if="visibleResources.length" class="spaces-grid">
       <q-card v-for="resource in visibleResources" :key="resource.id" flat bordered class="space-card">
         <div class="space-image-wrap">
-          <q-img v-if="resource.image" :src="resource.image" :alt="resource.name" class="space-image" fit="cover" />
+          <q-img v-if="resource.image" :src="resourceImage(resource)" :alt="resource.name" class="space-image" fit="cover" />
           <div v-else class="image-placeholder">
             <q-icon :name="resourceIcon(resource)" size="42px" />
           </div>
@@ -111,7 +111,7 @@
           <div class="dialog-hero">
             <q-img
               v-if="selectedResource.image"
-              :src="selectedResource.image"
+              :src="resourceImage(selectedResource)"
               :alt="selectedResource.name"
               class="dialog-image"
               fit="cover"
@@ -163,7 +163,7 @@
                   outlined
                   dense
                   label="Start time"
-                  :options="startTimeOptions"
+                  :options="dialogStartTimeOptions"
                   :rules="[(value) => !!value || 'Start time is required']"
                 />
                 <span class="to-label">to</span>
@@ -172,9 +172,18 @@
                   outlined
                   dense
                   label="End time"
-                  :options="endTimeOptions"
+                  :options="dialogEndTimeOptions"
                   :rules="[(value) => !!value || 'End time is required']"
                 />
+              </div>
+              <div v-if="selectedSlotConflict" class="field-help text-negative q-mt-sm">
+                {{ selectedSlotConflict }}
+              </div>
+              <div
+                v-else-if="selectedResource && busyIntervals(selectedResource).length"
+                class="field-help q-mt-sm"
+              >
+                Other intervals are already reserved — pick a free start/end time.
               </div>
             </div>
 
@@ -222,7 +231,7 @@
               icon-right="arrow_forward"
               class="confirm-button"
               :loading="submitting"
-              :disable="duration <= 0 || quoteLoading || !!quoteError"
+              :disable="duration <= 0 || quoteLoading || !!quoteError || !!selectedSlotConflict"
             />
           </q-form>
         </q-card-section>
@@ -234,7 +243,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useQuasar } from 'quasar';
 import api from '@/services/api';
@@ -242,6 +251,13 @@ import BookingReceiptDialog from '@/components/user/BookingReceiptDialog.vue';
 import { emitDashboardRefresh, useDashboardEvents } from '@/stores/dashboard-events';
 import { useNotificationsStore } from '@/stores/notifications-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { resolveAssetUrl } from '@/utils/assetUrl';
+import {
+  BOOKED_INTERVAL_MESSAGE,
+  conflictMessageForSelection,
+  timesOverlap as rangesOverlap,
+  timeToMinutes as parseTimeToMinutes,
+} from '@/utils/bookingInterval';
 
 type BusyInterval = {
   date: string;
@@ -322,11 +338,71 @@ const timeOptions = Array.from({ length: 24 * 2 }, (_, index) => {
   const minutes = totalMinutes % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 });
-const startTimeOptions = computed(() => timeOptions.slice(0, -1));
-const endTimeOptions = computed(() => {
-  const startIndex = timeOptions.indexOf(booking.value.startTime);
-  return startIndex >= 0 ? timeOptions.slice(startIndex + 1) : timeOptions.slice(1);
+
+function timesOverlap(startA: string, endA: string, startB: string, endB: string) {
+  return rangesOverlap(startA, endA, startB, endB);
+}
+
+function resourceBusyOnDate(resource: Resource | null, date: string): BusyInterval[] {
+  if (!resource || !date) return [];
+  return busyIntervals(resource).filter((slot) => slot.date === date);
+}
+
+function isRangeFree(resource: Resource | null, date: string, start: string, end: string) {
+  if (!resource || !date || !start || !end) return false;
+  const startMin = parseTimeToMinutes(start);
+  const endMin = parseTimeToMinutes(end);
+  if (startMin == null || endMin == null || endMin <= startMin) return false;
+  return !resourceBusyOnDate(resource, date).some((slot) =>
+    timesOverlap(start, end, slot.startTime, slot.endTime),
+  );
+}
+
+function firstFreeSlot(resource: Resource, date: string): { startTime: string; endTime: string } {
+  for (let i = 0; i < timeOptions.length - 1; i += 1) {
+    const start = timeOptions[i];
+    if (!start) continue;
+    // Prefer a 1-hour block when possible, otherwise the next 30 minutes.
+    const preferredEnd = timeOptions[i + 2] || timeOptions[i + 1];
+    if (preferredEnd && isRangeFree(resource, date, start, preferredEnd)) {
+      return { startTime: start, endTime: preferredEnd };
+    }
+    const shortEnd = timeOptions[i + 1];
+    if (shortEnd && isRangeFree(resource, date, start, shortEnd)) {
+      return { startTime: start, endTime: shortEnd };
+    }
+  }
+  return {
+    startTime: timeOptions[0] || '',
+    endTime: timeOptions[2] || timeOptions[1] || '',
+  };
+}
+
+const dialogStartTimeOptions = computed(() => {
+  const resource = selectedResource.value;
+  const date = booking.value.date;
+  if (!resource || !date) return timeOptions.slice(0, -1);
+  return timeOptions.slice(0, -1).filter((start) => {
+    const startMin = parseTimeToMinutes(start);
+    if (startMin == null) return false;
+    return timeOptions.some((end) => {
+      const endMin = parseTimeToMinutes(end);
+      return endMin != null && endMin > startMin && isRangeFree(resource, date, start, end);
+    });
+  });
 });
+
+const dialogEndTimeOptions = computed(() => {
+  const resource = selectedResource.value;
+  const date = booking.value.date;
+  const start = booking.value.startTime;
+  const startMin = parseTimeToMinutes(start);
+  if (startMin == null) return timeOptions.slice(1);
+  const later = timeOptions.filter((end) => (parseTimeToMinutes(end) || 0) > startMin);
+  if (!resource || !date) return later;
+  return later.filter((end) => isRangeFree(resource, date, start, end));
+});
+
 const typeOptions = computed(() =>
   resourceTypeNames.value.map((value) => ({
     label: value,
@@ -365,11 +441,19 @@ const visibleResources = computed(() => {
 });
 
 const duration = computed(() => {
-  const start = timeToMinutes(booking.value.startTime);
-  const end = timeToMinutes(booking.value.endTime);
+  const start = parseTimeToMinutes(booking.value.startTime);
+  const end = parseTimeToMinutes(booking.value.endTime);
   return start === null || end === null || end <= start ? 0 : (end - start) / 60;
 });
 const durationLabel = computed(() => `${duration.value} ${duration.value === 1 ? 'hour' : 'hours'}`);
+
+const selectedSlotConflict = computed(() => {
+  const resource = selectedResource.value;
+  if (!resource) return '';
+  const { date, startTime, endTime } = booking.value;
+  if (!date || !startTime || !endTime || duration.value <= 0) return '';
+  return conflictMessageForSelection(date, startTime, endTime, busyIntervals(resource));
+});
 
 function parseMinimumDurationHours(value: string | number | undefined): number {
   if (value == null || value === '') return 0;
@@ -417,36 +501,36 @@ async function refreshQuote() {
   }
 }
 
-function timeToMinutes(value: string): number | null {
-  const [hours = Number.NaN, minutes = Number.NaN] = value.split(':').map(Number);
-  return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : null;
-}
-
 function busyIntervals(resource: Resource): BusyInterval[] {
   return Array.isArray(resource.unavailableIntervals) ? resource.unavailableIntervals : [];
 }
 
+function resourceImage(resource: Resource) {
+  return resolveAssetUrl(resource.image);
+}
+
 function statusPillLabel(resource: Resource) {
-  if (resource.availabilityStatus === 'booked' || resource.bookedByCurrentUser) return 'Booked';
   if (resource.availabilityStatus === 'maintenance' || resource.inService === false) return 'Unavailable';
+  if (resource.availabilityStatus === 'booked' || resource.bookedByCurrentUser) return 'Booked';
   if (resource.availabilityStatus === 'unavailable' || resource.bookedByOthers) return 'Unavailable';
+  if (busyIntervals(resource).length) return 'Partially Booked';
   return resource.available ? 'Available' : 'Unavailable';
 }
 
 function statusPillClass(resource: Resource) {
   const label = statusPillLabel(resource);
   if (label === 'Available') return 'available';
-  if (label === 'Booked') return 'booked';
+  if (label === 'Booked' || label === 'Partially Booked') return 'booked';
   return 'unavailable';
 }
 
 function canBookResource(resource: Resource) {
+  if (resource.inService === false || resource.availabilityStatus === 'maintenance') return false;
   if (typeof resource.canBook === 'boolean') return resource.canBook;
   return !!resource.available;
 }
 
 function actionLabel(resource: Resource) {
-  if (resource.bookedByCurrentUser || resource.availabilityStatus === 'booked') return 'Booked';
   if (!canBookResource(resource)) return 'Unavailable';
   return 'Book Now';
 }
@@ -488,10 +572,12 @@ function applyFilters() {
 }
 function openBooking(resource: Resource) {
   selectedResource.value = resource;
+  const date = draftDate.value || today;
+  const slot = firstFreeSlot(resource, date);
   booking.value = {
-    date: draftDate.value || today,
-    startTime: startTimeOptions.value[0] || '',
-    endTime: startTimeOptions.value[2] || startTimeOptions.value[1] || '',
+    date,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
     purpose: '',
     notes: '',
     addOns: [],
@@ -512,9 +598,12 @@ async function loadPricingForResource(resource: Resource) {
   }
 }
 
-async function loadData() {
-  loading.value = true;
-  error.value = '';
+async function loadData(options: { silent?: boolean } = {}) {
+  const { silent = false } = options;
+  if (!silent) {
+    loading.value = true;
+    error.value = '';
+  }
   try {
     const resourceParams: Record<string, string> = {};
     const date = draftDate.value || booking.value.date || today;
@@ -546,20 +635,26 @@ async function loadData() {
     }
   } catch (err: unknown) {
     const ax = err as { response?: { data?: { message?: string }; status?: number }; message?: string };
-    error.value =
-      ax.response?.data?.message ||
-      (ax.response?.status ? `Unable to load spaces (HTTP ${ax.response.status}).` : null) ||
-      ax.message ||
-      'Unable to load spaces.';
-    resources.value = [];
+    if (!silent) {
+      error.value =
+        ax.response?.data?.message ||
+        (ax.response?.status ? `Unable to load spaces (HTTP ${ax.response.status}).` : null) ||
+        ax.message ||
+        'Unable to load spaces.';
+      resources.value = [];
+    }
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
 async function confirmBooking() {
   if (!selectedResource.value || duration.value <= 0) {
     $q.notify({ type: 'warning', message: 'Choose an end time after the start time.' });
+    return;
+  }
+  if (selectedSlotConflict.value) {
+    $q.notify({ type: 'warning', message: selectedSlotConflict.value || BOOKED_INTERVAL_MESSAGE });
     return;
   }
   if (minimumDurationHours.value > 0 && duration.value < minimumDurationHours.value) {
@@ -594,7 +689,8 @@ async function confirmBooking() {
       typeof err === 'object' && err && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-    $q.notify({ type: 'negative', message: message || 'Booking could not be created.' });
+    $q.notify({ type: 'negative', message: message || BOOKED_INTERVAL_MESSAGE });
+    await loadData({ silent: true });
   } finally {
     submitting.value = false;
   }
@@ -603,10 +699,22 @@ async function confirmBooking() {
 watch(
   () => booking.value.startTime,
   () => {
-    if (!endTimeOptions.value.includes(booking.value.endTime)) {
-      booking.value.endTime = endTimeOptions.value[0] || '';
+    if (!dialogEndTimeOptions.value.includes(booking.value.endTime)) {
+      booking.value.endTime = dialogEndTimeOptions.value[0] || '';
     }
     void refreshQuote();
+  },
+);
+
+watch(
+  () => booking.value.date,
+  (date) => {
+    if (!selectedResource.value || !date) return;
+    const slot = firstFreeSlot(selectedResource.value, date);
+    if (!isRangeFree(selectedResource.value, date, booking.value.startTime, booking.value.endTime)) {
+      booking.value.startTime = slot.startTime;
+      booking.value.endTime = slot.endTime;
+    }
   },
 );
 
@@ -635,10 +743,19 @@ watch(() => dashboardEvents.version, () => {
   void loadData();
 });
 
+let availabilityTimer: ReturnType<typeof setInterval> | undefined;
+
 onMounted(() => {
   void loadData();
+  // Refresh so expired booking windows free the room without a manual reload.
+  availabilityTimer = setInterval(() => {
+    void loadData({ silent: true });
+  }, 60_000);
 });
-</script>
+
+onUnmounted(() => {
+  if (availabilityTimer) clearInterval(availabilityTimer);
+});</script>
 
 <style scoped>
 .browse-header {

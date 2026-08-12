@@ -3,8 +3,28 @@ import db from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { computeResourceAvailability } from '../utils/resourceAvailability.js';
 import { loadMergedPricing } from '../utils/pricingCalculator.js';
+import { saveResourceImageDataUrl } from '../utils/resourceImageUpload.js';
 
 const router = Router();
+
+function resolveImageInput(body = {}, existingImage = '') {
+  const imageData = body.imageData || body.imageBase64;
+  if (imageData) {
+    try {
+      return { ok: true, image: saveResourceImageDataUrl(imageData, body.imageName).url };
+    } catch (err) {
+      return { ok: false, status: err.status || 400, message: err.message || 'Invalid image upload.' };
+    }
+  }
+  if (body.clearImage) {
+    return { ok: true, image: '' };
+  }
+  if (body.image !== undefined) {
+    // Keep backward compatibility for existing absolute/relative URLs.
+    return { ok: true, image: String(body.image || '') };
+  }
+  return { ok: true, image: existingImage };
+}
 
 const rowToResource = (r, availability = null) => {
   const base = {
@@ -120,12 +140,25 @@ async function enrichResources(rows, window, viewerUserId = null) {
 /* GET /api/resources
  * Optional query: date, startTime, endTime — scopes booking conflict checks.
  * Without date: a resource is Unavailable while it has an active upcoming/ongoing booking.
+ * With date only: shows remaining intervals that day; status reflects current occupancy.
  */
 router.get('/', authenticate, async (req, res) => {
   const rows = await db.prepare('SELECT * FROM resources ORDER BY id').all();
   const window = parseAvailabilityWindow(req.query);
   const resources = await enrichResources(rows, window, req.user?.id);
   res.json({ resources, window });
+});
+
+/* POST /api/resources/upload — save image from data URL (admin). */
+router.post('/upload', authenticate, authorize('admin'), async (req, res) => {
+  const imageData = req.body?.imageData || req.body?.imageBase64;
+  if (!imageData) return res.status(400).json({ message: 'imageData is required.' });
+  try {
+    const saved = saveResourceImageDataUrl(imageData, req.body?.imageName);
+    res.status(201).json({ url: saved.url, image: saved.url, filename: saved.filename });
+  } catch (err) {
+    res.status(err.status || 400).json({ message: err.message || 'Upload failed.' });
+  }
 });
 
 /* GET /api/resources/:id */
@@ -146,18 +179,20 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
     location = '',
     description = '',
     available = true,
-    image = '',
   } = req.body || {};
   if (!name) return res.status(400).json({ message: 'Name is required.' });
 
   const typeCheck = await assertValidResourceType(type);
   if (!typeCheck.ok) return res.status(typeCheck.status).json({ message: typeCheck.message });
 
+  const imageResult = resolveImageInput(req.body || {}, '');
+  if (!imageResult.ok) return res.status(imageResult.status).json({ message: imageResult.message });
+
   const info = await db
     .prepare(
       'INSERT INTO resources (name, type, capacity, location, description, available, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(name, typeCheck.name, capacity, location, description, available ? 1 : 0, image);
+    .run(name, typeCheck.name, capacity, location, description, available ? 1 : 0, imageResult.image);
   const row = await db.prepare('SELECT * FROM resources WHERE id = ?').get(info.lastInsertRowid);
   const [resource] = await enrichResources([row], {});
   res.status(201).json({ resource });
@@ -167,7 +202,7 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
 router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
   const existing = await db.prepare('SELECT * FROM resources WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ message: 'Resource not found.' });
-  const { name, type, capacity, location, description, available, image } = req.body || {};
+  const { name, type, capacity, location, description, available } = req.body || {};
 
   let nextType = existing.type;
   if (type !== undefined) {
@@ -175,6 +210,9 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
     if (!typeCheck.ok) return res.status(typeCheck.status).json({ message: typeCheck.message });
     nextType = typeCheck.name;
   }
+
+  const imageResult = resolveImageInput(req.body || {}, existing.image);
+  if (!imageResult.ok) return res.status(imageResult.status).json({ message: imageResult.message });
 
   await db
     .prepare(
@@ -187,7 +225,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
       location ?? existing.location,
       description ?? existing.description,
       available !== undefined ? (available ? 1 : 0) : existing.available,
-      image ?? existing.image,
+      imageResult.image,
       existing.id,
     );
   const row = await db.prepare('SELECT * FROM resources WHERE id = ?').get(existing.id);

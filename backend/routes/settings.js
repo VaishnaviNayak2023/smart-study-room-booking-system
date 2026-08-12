@@ -5,6 +5,7 @@ import {
   clearSettingsCurrencyCache,
   parseCurrencyCode,
 } from '../utils/currency.js';
+import { convertStoredCurrencyValues } from '../utils/currencyConvert.js';
 
 const router = Router();
 
@@ -50,19 +51,34 @@ router.get('/', authenticate, async (req, res) => {
 /* PUT /api/settings */
 router.put('/', authenticate, authorize('admin'), async (req, res) => {
   const body = req.body || {};
-  const currencyCode = parseCurrencyCode(body.currency);
+  const nextCurrencyCode = parseCurrencyCode(body.currency);
+
   const existing = await db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  const previousSettings = parseSettingsData(existing?.data);
+  const previousCurrencyCode = parseCurrencyCode(previousSettings.currency);
+
   if (existing) {
-    await db.prepare('UPDATE settings SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run(JSON.stringify(body));
+    await db
+      .prepare('UPDATE settings SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1')
+      .run(JSON.stringify(body));
   } else {
     await db.prepare('INSERT INTO settings (id, data) VALUES (1, ?)').run(JSON.stringify(body));
   }
 
   clearSettingsCurrencyCache();
-  await syncGeneralPricingCurrency(currencyCode);
+
+  let conversion = null;
+  if (previousCurrencyCode && nextCurrencyCode && previousCurrencyCode !== nextCurrencyCode) {
+    conversion = await convertStoredCurrencyValues(db, previousCurrencyCode, nextCurrencyCode);
+  } else {
+    await syncGeneralPricingCurrency(nextCurrencyCode);
+  }
 
   const row = await db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  res.json({ settings: withCurrencyCode(parseSettingsData(row?.data)) });
+  res.json({
+    settings: withCurrencyCode(parseSettingsData(row?.data)),
+    conversion,
+  });
 });
 
 export default router;
