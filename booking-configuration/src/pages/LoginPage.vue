@@ -17,7 +17,6 @@
             :options="[{ label: 'User', value: 'user' }, { label: 'Admin', value: 'admin' }]"
             unelevated
             no-caps
-            @update:model-value="roleExplicitlyChosen = true"
           />
           <q-form ref="loginForm" class="auth-form" @submit.prevent="handleLogin">
             <q-input v-model="email" outlined dense label="Email address" type="email" autocomplete="email" :rules="emailRules"><template #prepend><q-icon name="mail_outline" /></template></q-input>
@@ -42,7 +41,6 @@ type Role = 'admin' | 'user';
 const email = ref('');
 const password = ref('');
 const role = ref<Role>('user');
-const roleExplicitlyChosen = ref(false);
 const showPassword = ref(false);
 const loginForm = ref<{ validate: () => Promise<boolean> } | null>(null); const router = useRouter(); const studyroomStore = useStudyroomStore();
 const appName = computed(() => appConfig.appName || 'Booking Portal'); const currentYear = new Date().getFullYear();
@@ -51,11 +49,7 @@ const passwordRules = [(value: string) => !!value || 'Password is required.', (v
 async function handleLogin() {
   if (!(await loginForm.value?.validate())) return;
   try {
-    const user = await studyroomStore.login(
-      email.value,
-      password.value,
-      roleExplicitlyChosen.value ? role.value : undefined,
-    );
+    const user = await studyroomStore.login(email.value, password.value, role.value);
     Notify.create({ type: 'positive', message: 'Sign-in successful.' });
     await router.replace(user.role === 'admin' ? '/admin-dashboard' : '/dashboard');
   } catch (error: unknown) {
@@ -70,7 +64,6 @@ async function handleLogin() {
         : undefined;
     if (response?.actualRole) {
       role.value = response.actualRole as Role;
-      roleExplicitlyChosen.value = true;
     }
     Notify.create({
       type: 'negative',

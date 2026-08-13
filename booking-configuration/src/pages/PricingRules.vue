@@ -437,6 +437,7 @@ type PricingRule = {
   peakDays?: string;
   minDurationHours?: number;
   advanceDays?: number;
+  fromGeneral?: boolean;
 };
 
 type PricingRuleFormState = {
@@ -541,6 +542,7 @@ function mapRuleFromApi(rule: PricingRule, index: number): PricingRule {
     ...(rule.peakDays ? { peakDays: rule.peakDays } : {}),
     ...(rule.minDurationHours !== undefined ? { minDurationHours: rule.minDurationHours } : {}),
     ...(rule.advanceDays !== undefined ? { advanceDays: rule.advanceDays } : {}),
+    ...(rule.fromGeneral ? { fromGeneral: true } : {}),
   };
 }
 
@@ -567,8 +569,8 @@ const selectedRuleSet = computed(() =>
 );
 const selectedRulesDescription = computed(() =>
   selectedPricingContext.value === 'general'
-    ? 'Global pricing rules always remain visible and apply across booking systems unless overridden by a booking-system rule.'
-    : `Rules for ${selectedContextLabel.value} stay visible while you update configuration below.`,
+    ? 'Rules added here are saved to every booking system by default and apply across quotes.'
+    : `Rules for ${selectedContextLabel.value}. Inherited General Base rules stay in sync automatically.`,
 );
 
 const simulationResourceOptions = computed(() =>
@@ -664,6 +666,9 @@ const loadPricing = async () => {
     pricingContexts.value = metaRes.data.contexts?.length
       ? metaRes.data.contexts
       : [{ label: 'General Base Pricing', value: 'general' }];
+    if (!pricingContexts.value.some((item) => item.value === selectedPricingContext.value)) {
+      selectedPricingContext.value = 'general';
+    }
     pricingStore.value = { ...(pricingRes.data.pricing || {}) };
     applyPricingFromStore();
     if (selectedPricingContext.value !== 'general') {
@@ -703,7 +708,7 @@ async function refreshSimulation() {
   simulationBreakdown.value = null;
   try {
     const isGeneral = selectedPricingContext.value === 'general';
-    let resourceId: number | null = isGeneral ? null : simulationResourceId.value;
+    const resourceId: number | null = isGeneral ? null : simulationResourceId.value;
     let resourceType = '';
     if (!isGeneral) {
       const label = pricingContexts.value.find((item) => item.value === selectedPricingContext.value)?.label;
@@ -780,6 +785,15 @@ const openRuleEditorForSelectedContext = (rule: PricingRule) => {
     openRuleEditor(rule);
     return;
   }
+  if (rule.fromGeneral) {
+    $q.notify({
+      type: 'info',
+      message: 'Inherited General Base rules are edited under General Base Pricing.',
+    });
+    selectedPricingContext.value = 'general';
+    openRuleEditor(rule);
+    return;
+  }
   editContextRule(rule);
 };
 
@@ -804,6 +818,13 @@ const removeRule = (rule: PricingRule) => {
 const removeRuleFromSelectedContext = (rule: PricingRule) => {
   if (selectedPricingContext.value === 'general') {
     removeRule(rule);
+    return;
+  }
+  if (rule.fromGeneral) {
+    $q.notify({
+      type: 'warning',
+      message: 'This rule comes from General Base Pricing. Remove or edit it there to update all booking systems.',
+    });
     return;
   }
   contextRules.value = contextRules.value.filter((item) => item.id !== rule.id);

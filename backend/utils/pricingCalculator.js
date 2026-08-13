@@ -25,6 +25,47 @@ export function pricingContextKey(name) {
     .replace(/^-|-$/g, '');
 }
 
+/** Keep first occurrence per rule id (general wins over synced copies). */
+export function dedupeRulesById(rules = []) {
+  const out = [];
+  const seen = new Set();
+  for (const rule of rules) {
+    const key =
+      rule?.id != null && String(rule.id) !== ''
+        ? `id:${rule.id}`
+        : `anon:${rule?.name || ''}:${out.length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(rule);
+  }
+  return out;
+}
+
+/**
+ * Ensure every general base rule appears in a booking-system config.
+ * Local-only rules (not from general / not sharing a general id) are preserved.
+ */
+export function applyGeneralRulesToContextData(contextData = {}, generalRules = []) {
+  const generalList = Array.isArray(generalRules) ? generalRules : [];
+  const generalIds = new Set(
+    generalList.map((rule) => (rule?.id != null ? String(rule.id) : '')).filter(Boolean),
+  );
+  const existing = Array.isArray(contextData.rules) ? contextData.rules : [];
+  const localRules = existing.filter((rule) => {
+    if (rule?.fromGeneral) return false;
+    if (rule?.id != null && generalIds.has(String(rule.id))) return false;
+    return true;
+  });
+
+  return {
+    ...contextData,
+    rules: [
+      ...generalList.map((rule) => ({ ...rule, fromGeneral: true })),
+      ...localRules,
+    ],
+  };
+}
+
 async function loadContextData(context) {
   const row = await db.prepare('SELECT data FROM pricing_rules WHERE context = ? ORDER BY id DESC LIMIT 1').get(context);
   return parseJsonColumn(row?.data);
@@ -70,10 +111,10 @@ export function mergePricingConfigs(general = {}, specific = {}, settingsCurrenc
     taxRate: Number(general.taxRate ?? general.gstRate ?? 0),
     taxLabel: general.taxLabel || 'Tax',
     addOns: Array.isArray(specific.addOns) ? specific.addOns : Array.isArray(general.addOns) ? general.addOns : [],
-    rules: [
+    rules: dedupeRulesById([
       ...(Array.isArray(general.rules) ? general.rules : []),
       ...(Array.isArray(specific.rules) ? specific.rules : []),
-    ],
+    ]),
     peakStart: specific.peakStart || general.peakStart || '',
     peakEnd: specific.peakEnd || general.peakEnd || '',
     peakDays: specific.peakDays || general.peakDays || '',

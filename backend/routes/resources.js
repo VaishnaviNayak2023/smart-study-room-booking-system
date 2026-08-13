@@ -139,7 +139,7 @@ async function enrichResources(rows, window, viewerUserId = null) {
 
 /* GET /api/resources
  * Optional query: date, startTime, endTime — scopes booking conflict checks.
- * Without date: a resource is Unavailable while it has an active upcoming/ongoing booking.
+ * Without date: lists upcoming intervals; status is Booked only during the current interval.
  * With date only: shows remaining intervals that day; status reflects current occupancy.
  */
 router.get('/', authenticate, async (req, res) => {

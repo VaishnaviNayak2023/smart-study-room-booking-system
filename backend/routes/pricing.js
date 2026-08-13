@@ -7,6 +7,7 @@ import {
   loadMergedPricing,
   mergePricingConfigs,
   pricingContextKey,
+  applyGeneralRulesToContextData,
 } from '../utils/pricingCalculator.js';
 
 const router = Router();
@@ -24,6 +25,19 @@ function parseJsonColumn(value) {
     }
   }
   return {};
+}
+
+async function syncGeneralRulesToAllContexts(generalRules) {
+  const rows = await db
+    .prepare("SELECT context, data FROM pricing_rules WHERE context <> 'general'")
+    .all();
+  for (const row of rows) {
+    const next = applyGeneralRulesToContextData(parseJsonColumn(row.data), generalRules);
+    await db
+      .prepare('UPDATE pricing_rules SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE context = ?')
+      .run(JSON.stringify(next), row.context);
+  }
+  return rows.length;
 }
 
 function validatePricingPayload(body) {
@@ -82,9 +96,9 @@ function validatePricingPayload(body) {
 /* GET /api/pricing-rules/meta — booking systems / contexts for admin UI */
 router.get('/meta', authenticate, authorize('admin'), async (req, res) => {
   const resourceTypes = await db.prepare('SELECT id, name FROM resource_types ORDER BY name').all();
-  const pricingRows = await db.prepare('SELECT DISTINCT context FROM pricing_rules ORDER BY context').all();
-  const existingContexts = new Set(pricingRows.map((row) => row.context));
 
+  // Only General + current resource types. Legacy rows like "study" stay in DB for
+  // quote fallbacks but are not shown as selectable booking systems.
   const contexts = [
     { label: 'General Base Pricing', value: 'general' },
     ...resourceTypes.map((type) => ({
@@ -92,13 +106,6 @@ router.get('/meta', authenticate, authorize('admin'), async (req, res) => {
       value: pricingContextKey(type.name),
     })),
   ];
-
-  for (const context of existingContexts) {
-    if (context === 'general') continue;
-    if (!contexts.some((item) => item.value === context)) {
-      contexts.push({ label: context, value: context });
-    }
-  }
 
   res.json({ contexts, resourceTypes });
 });
@@ -199,10 +206,17 @@ router.put('/:context', authenticate, authorize('admin'), async (req, res) => {
     return res.status(400).json({ message: 'Pricing context is required.' });
   }
 
-  const body = req.body || {};
+  let body = req.body || {};
   const errors = validatePricingPayload(body);
   if (errors.length) {
     return res.status(400).json({ message: errors.join(' ') });
+  }
+
+  // Booking-system saves must keep inherited General Base rules.
+  if (context !== 'general') {
+    const generalRow = await db.prepare('SELECT data FROM pricing_rules WHERE context = ?').get('general');
+    const generalData = parseJsonColumn(generalRow?.data);
+    body = applyGeneralRulesToContextData(body, generalData.rules || []);
   }
 
   const existing = await db.prepare('SELECT * FROM pricing_rules WHERE context = ?').get(context);
@@ -214,8 +228,13 @@ router.put('/:context', authenticate, authorize('admin'), async (req, res) => {
     await db.prepare('INSERT INTO pricing_rules (context, data) VALUES (?, ?)').run(context, JSON.stringify(body));
   }
 
+  let syncedContexts = 0;
+  if (context === 'general') {
+    syncedContexts = await syncGeneralRulesToAllContexts(body.rules || []);
+  }
+
   const row = await db.prepare('SELECT * FROM pricing_rules WHERE context = ?').get(context);
-  res.json({ context, pricing: parseJsonColumn(row?.data) });
+  res.json({ context, pricing: parseJsonColumn(row?.data), syncedContexts });
 });
 
 export default router;

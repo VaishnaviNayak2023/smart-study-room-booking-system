@@ -19,7 +19,7 @@
     </q-card>
 
     <div v-if="loading" class="portal-loading"><q-spinner color="primary" size="32px" /> Loading resources…</div>
-    <div v-else-if="error" class="portal-error"><div>{{ error }}</div><q-btn unelevated no-caps color="primary" label="Retry" @click="loadResources" /></div>
+    <div v-else-if="error" class="portal-error"><div>{{ error }}</div><q-btn unelevated no-caps color="primary" label="Retry" @click="() => loadResources()" /></div>
     <q-card v-else flat bordered class="table-card">
       <div v-if="!pagedRows.length" class="portal-empty">No resources match the current filters.</div>
       <q-table v-else :rows="pagedRows" :columns="columns" row-key="id" flat hide-pagination :pagination="{ rowsPerPage: 0 }">
@@ -56,13 +56,13 @@
       </div>
     </q-card>
 
-    <ResourceFormDialog v-model="formOpen" :resource="editing" :type-options="typeOptions" @saved="loadResources" />
+    <ResourceFormDialog v-model="formOpen" :resource="editing" :type-options="typeOptions" @saved="() => loadResources()" />
     <ConfirmDialog v-model="deleteOpen" title="Delete Resource" :message="deleteMessage" confirm-label="Delete" cancel-label="Cancel" icon="warning" variant="danger" :loading="deletingBusy" @confirm="doDelete" />
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Notify } from 'quasar';
 import api from '@/services/api';
@@ -88,6 +88,7 @@ const formOpen = ref(false);
 const editing = ref<ResourceFormData | null>(null);
 const deleteOpen = ref(false);
 const deleting = ref<Resource | null>(null);
+let availabilityTimer: ReturnType<typeof setInterval> | undefined;
 const deletingBusy = ref(false);
 const deleteMessage = computed(() =>
   `Are you sure you want to delete "${deleting.value?.name || 'this resource'}"?`,
@@ -112,7 +113,9 @@ const typeIconByName = computed(() => {
 
 function statusChipLabel(row: Resource) {
   if (row.inService === false || row.availabilityStatus === 'maintenance') return 'Unavailable';
-  if (row.isBooked || row.availabilityStatus === 'booked') return 'Booked';
+  if (row.isBooked || row.availabilityStatus === 'booked' || row.availabilityStatus === 'unavailable') {
+    return 'Booked';
+  }
   return 'Available';
 }
 
@@ -168,9 +171,11 @@ async function loadResourceTypes() {
   resourceTypes.value = data.resourceTypes || [];
 }
 
-async function loadResources() {
-  loading.value = true;
-  error.value = '';
+async function loadResources(options: { silent?: boolean } = {}) {
+  if (!options.silent) {
+    loading.value = true;
+    error.value = '';
+  }
   try {
     const [resourcesRes] = await Promise.all([
       api.get<{ resources: Resource[] }>('/resources'),
@@ -201,9 +206,9 @@ async function loadResources() {
       };
     });
   } catch {
-    error.value = 'Unable to load resources.';
+    if (!options.silent) error.value = 'Unable to load resources.';
   } finally {
-    loading.value = false;
+    if (!options.silent) loading.value = false;
   }
 }
 
@@ -288,6 +293,14 @@ onMounted(async () => {
     const resource = resources.value.find((row) => String(row.id) === String(editId));
     if (resource) void openEdit(resource);
   }
+  // Refresh so expired booking windows free the resource without a manual reload.
+  availabilityTimer = setInterval(() => {
+    void loadResources({ silent: true });
+  }, 60_000);
+});
+
+onUnmounted(() => {
+  if (availabilityTimer) clearInterval(availabilityTimer);
 });
 
 watch(

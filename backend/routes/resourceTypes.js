@@ -1,9 +1,23 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
-import { pricingContextKey } from '../utils/pricingCalculator.js';
+import { applyGeneralRulesToContextData, pricingContextKey } from '../utils/pricingCalculator.js';
 
 const router = Router();
+
+function parseJsonColumn(value) {
+  if (value == null) return {};
+  if (typeof value === 'object') return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
 
 const rowToType = async (r) => ({
   id: r.id,
@@ -34,26 +48,24 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
   const existingPricing = await db.prepare('SELECT id FROM pricing_rules WHERE context = ?').get(context);
   if (!existingPricing) {
     const generalRow = await db.prepare('SELECT data FROM pricing_rules WHERE context = ?').get('general');
-    let baseRate = 0;
-    if (generalRow?.data) {
-      const generalData = typeof generalRow.data === 'string' ? JSON.parse(generalRow.data) : generalRow.data;
-      baseRate = Number(generalData?.baseRate) || 0;
-    }
+    const generalData = parseJsonColumn(generalRow?.data);
+    const baseRate = Number(generalData?.baseRate) || 0;
+    const seeded = applyGeneralRulesToContextData(
+      {
+        hourlyRate: baseRate,
+        freeFirstHour: false,
+        peakStart: '',
+        peakEnd: '',
+        peakDays: 'Mon - Fri',
+        peakMultiplier: 1,
+        roleDiscounts: [],
+        rules: [],
+      },
+      generalData.rules || [],
+    );
     await db
       .prepare('INSERT INTO pricing_rules (context, data) VALUES (?, ?)')
-      .run(
-        context,
-        JSON.stringify({
-          hourlyRate: baseRate,
-          freeFirstHour: false,
-          peakStart: '',
-          peakEnd: '',
-          peakDays: 'Mon - Fri',
-          peakMultiplier: 1,
-          roleDiscounts: [],
-          rules: [],
-        }),
-      );
+      .run(context, JSON.stringify(seeded));
   }
 
   res.status(201).json({ resourceType: await rowToType(row) });

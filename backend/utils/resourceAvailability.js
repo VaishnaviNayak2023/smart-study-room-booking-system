@@ -153,7 +153,9 @@ function sortIntervals(intervals) {
  * - date + startTime + endTime → slot conflict check (booking create/edit)
  * - date only → show that day's remaining intervals; status reflects "occupied now"
  *   when the date is today (past slots no longer block; free gaps stay bookable)
- * - no date → any still-active upcoming/ongoing booking
+ * - no date → list upcoming/ongoing intervals, but status is Booked only while a
+ *   booking occupies the current time; after it ends the resource is Available
+ *   until the next interval starts
  */
 export function computeResourceAvailability(
   resource,
@@ -189,8 +191,9 @@ export function computeResourceAvailability(
     blockingBookings =
       windowDate === today ? displayBookings.filter((b) => bookingOccupiesNow(b, now)) : [];
   } else {
+    // Upcoming/ongoing intervals for display; status only while occupied right now.
     displayBookings = bookings.filter((b) => bookingStillActive(b, now));
-    blockingBookings = displayBookings;
+    blockingBookings = displayBookings.filter((b) => bookingOccupiesNow(b, now));
   }
 
   const intervals = sortIntervals(displayBookings.map((b) => toInterval(b, viewerUserId)));

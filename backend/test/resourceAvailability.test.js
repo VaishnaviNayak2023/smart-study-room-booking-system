@@ -90,3 +90,60 @@ test('explicit time window blocks overlapping slots only', () => {
   assert.equal(blocked.canBook, false);
   assert.equal(free.canBook, true);
 });
+
+test('no-date status frees after interval ends and books again for next interval', () => {
+  const resource = { available: 1 };
+  const bookings = [
+    {
+      status: 'Confirmed',
+      date: '2026-08-12',
+      start_time: '09:00',
+      end_time: '10:00',
+      user_id: 2,
+      booking_code: 'B1',
+    },
+    {
+      status: 'Confirmed',
+      date: '2026-08-12',
+      start_time: '14:00',
+      end_time: '15:00',
+      user_id: 3,
+      booking_code: 'B2',
+    },
+  ];
+
+  const duringFirst = computeResourceAvailability(
+    resource,
+    bookings,
+    {},
+    new Date('2026-08-12T09:30:00'),
+    1,
+  );
+  assert.equal(duringFirst.isBooked, true);
+  assert.equal(duringFirst.availabilityStatus, 'unavailable');
+  assert.equal(duringFirst.unavailableIntervals.length, 2);
+
+  const betweenIntervals = computeResourceAvailability(
+    resource,
+    bookings,
+    {},
+    new Date('2026-08-12T11:00:00'),
+    1,
+  );
+  assert.equal(betweenIntervals.isBooked, false);
+  assert.equal(betweenIntervals.available, true);
+  assert.equal(betweenIntervals.availabilityStatus, 'available');
+  assert.equal(betweenIntervals.unavailableIntervals.length, 1);
+  assert.equal(betweenIntervals.unavailableIntervals[0].startTime, '14:00');
+
+  const duringNext = computeResourceAvailability(
+    resource,
+    bookings,
+    {},
+    new Date('2026-08-12T14:15:00'),
+    1,
+  );
+  assert.equal(duringNext.isBooked, true);
+  assert.equal(duringNext.unavailableIntervals.length, 1);
+  assert.equal(duringNext.unavailableIntervals[0].startTime, '14:00');
+});
